@@ -21,7 +21,7 @@ echo "Journal sessions recorded: $TOTAL"
 echo
 
 echo "## Journal history (git)"
-git log --oneline --date=short --pretty=format:'- %ad  %s' -- "$JOURNAL" 2>/dev/null | head -15
+git log --date=short --pretty=format:'- %ad  %s' --grep='^journal:' -- "$JOURNAL" 2>/dev/null | head -15
 echo
 echo
 
