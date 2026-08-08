@@ -1,0 +1,15 @@
+name: progress_report
+description: >
+  Generate a parent-facing progress summary from the growth journal and its
+  git history: how many sessions, what mysteries were explored, which
+  thinking moves the child is using, and what sparked their curiosity for
+  next time. Use this when a parent asks how their child is doing.
+input_schema:
+  type: object
+  properties:
+    entries:
+      type: number
+      description: How many recent journal entries to include in full (default 3)
+implementation:
+  script: progress_report.sh
+  runtime: sh
