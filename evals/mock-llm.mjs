@@ -94,7 +94,12 @@ const server = http.createServer((req, res) => {
     const id = "chatcmpl-mock" + Date.now();
     const model = payload.model || "mock-1";
     const lastUser = [...msgs].reverse().find((m) => m.role === "user");
-    const userText = typeof lastUser?.content === "string" ? lastUser.content : "";
+    // content may be a plain string or an array of content parts
+    const userText = typeof lastUser?.content === "string"
+      ? lastUser.content
+      : Array.isArray(lastUser?.content)
+        ? lastUser.content.map((p) => (typeof p === "string" ? p : p?.text || "")).join(" ")
+        : "";
 
     // After any tool result (success or blocked), finish the turn with text so
     // the run terminates deterministically.
