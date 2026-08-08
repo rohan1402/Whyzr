@@ -1,0 +1,14 @@
+# gitagent runtime state. Must be ignored before the first gitagent run,
+# otherwise .gitagent/state.json gets tracked and blocks git checkout between branches.
+.gitagent/
+
+# dependencies
+node_modules/
+
+# secrets
+.env
+.env.*
+!.env.example
+
+# os noise
+.DS_Store
