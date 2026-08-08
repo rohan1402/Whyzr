@@ -90,6 +90,13 @@ const server = http.createServer((req, res) => {
     let payload = {}; try { payload = JSON.parse(body); } catch {}
     const msgs = payload.messages || [];
     const hasToolResult = msgs.some((m) => m.role === "tool");
+    // Log which age persona the assembled system prompt carries. This is how
+    // the age-branch test proves that `git checkout age-N` swaps the tutor.
+    const sysMsg = msgs.find((m) => m.role === "system" || m.role === "developer");
+    const sysText = typeof sysMsg?.content === "string" ? sysMsg.content
+      : Array.isArray(sysMsg?.content) ? sysMsg.content.map((p) => p?.text || "").join(" ") : "";
+    const ageMatch = sysText.match(/about (\d+) years old/);
+    console.log(`[mock] system persona: ${ageMatch ? "age " + ageMatch[1] : "NO AGE MARKER"} (system: ${sysText.length} chars)`);
     for (const m of msgs.filter((x) => x.role === "tool")) {
       const c = typeof m.content === "string" ? m.content
         : Array.isArray(m.content) ? m.content.map((p) => p?.text || "").join(" ") : JSON.stringify(m.content);
