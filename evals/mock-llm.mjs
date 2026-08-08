@@ -90,6 +90,11 @@ const server = http.createServer((req, res) => {
     let payload = {}; try { payload = JSON.parse(body); } catch {}
     const msgs = payload.messages || [];
     const hasToolResult = msgs.some((m) => m.role === "tool");
+    for (const m of msgs.filter((x) => x.role === "tool")) {
+      const c = typeof m.content === "string" ? m.content
+        : Array.isArray(m.content) ? m.content.map((p) => p?.text || "").join(" ") : JSON.stringify(m.content);
+      console.log(`[mock] tool-result: ${String(c).slice(0, 160)}`);
+    }
     const wantsStream = payload.stream === true;
     const id = "chatcmpl-mock" + Date.now();
     const model = payload.model || "mock-1";
