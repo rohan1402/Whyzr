@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>whyAI</title>
+<style>
+  :root {
+    --cream: #FFF8EC;
+    --sky: #BDE3FF;
+    --sun: #FFD66B;
+    --ink: #3A3350;
+    --tutor: #FFFFFF;
+    --kid: #D9F2D0;
+    --accent: #FF8A5C;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: "Comic Sans MS", "Chalkboard SE", "Segoe UI", system-ui, sans-serif;
+    background: linear-gradient(180deg, var(--sky) 0%, var(--cream) 30%);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  header { text-align: center; padding: 22px 10px 6px; }
+  header h1 { font-size: 2.2rem; letter-spacing: 1px; }
+  header h1 .why { color: var(--accent); }
+  header p { opacity: .75; font-size: 1rem; margin-top: 2px; }
+  #chat {
+    width: min(680px, 94vw);
+    flex: 1;
+    padding: 16px 4px 140px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .bubble {
+    max-width: 82%;
+    padding: 14px 18px;
+    border-radius: 22px;
+    font-size: 1.15rem;
+    line-height: 1.45;
+    box-shadow: 0 2px 6px rgba(58, 51, 80, .10);
+    white-space: pre-wrap;
+    animation: pop .18s ease-out;
+  }
+  @keyframes pop { from { transform: scale(.92); opacity: 0; } }
+  .tutor { background: var(--tutor); border-bottom-left-radius: 6px; align-self: flex-start; }
+  .kid   { background: var(--kid);   border-bottom-right-radius: 6px; align-self: flex-end; }
+  .thinking { align-self: flex-start; opacity: .6; font-size: 1.4rem; letter-spacing: 4px; }
+  #dock {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 14px 16px 20px;
+    background: linear-gradient(180deg, transparent, var(--cream) 35%);
+  }
+  #mic {
+    width: 92px; height: 92px;
+    border-radius: 50%;
+    border: none;
+    background: var(--sun);
+    font-size: 2.6rem;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(58, 51, 80, .25);
+    transition: transform .1s;
+  }
+  #mic:active { transform: scale(.95); }
+  #mic.listening {
+    background: var(--accent);
+    animation: pulse 1.1s infinite;
+  }
+  @keyframes pulse {
+    0%   { box-shadow: 0 0 0 0 rgba(255, 138, 92, .55); }
+    100% { box-shadow: 0 0 0 26px rgba(255, 138, 92, 0); }
+  }
+  #typed {
+    width: min(300px, 40vw);
+    padding: 12px 16px;
+    border: 2px solid rgba(58, 51, 80, .18);
+    border-radius: 999px;
+    font-size: 1rem;
+    font-family: inherit;
+    background: #fff;
+  }
+  #typed:focus { outline: 3px solid var(--sun); border-color: transparent; }
+  #newchat {
+    position: fixed; top: 14px; right: 16px;
+    background: none; border: none;
+    font-size: .85rem; color: var(--ink); opacity: .55;
+    cursor: pointer; font-family: inherit;
+  }
+  #miclabel { position: fixed; left: 50%; transform: translateX(-50%); bottom: 2px; font-size: .78rem; opacity: .55; }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span class="why">why</span>AI</h1>
+    <p>the friend who asks why back</p>
+  </header>
+  <button id="newchat" title="Start a fresh adventure">new adventure</button>
+  <main id="chat"></main>
+  <div id="dock">
+    <input id="typed" placeholder="or type here..." autocomplete="off">
+    <button id="mic" title="Push to talk">&#127908;</button>
+  </div>
+  <div id="miclabel">press the button and talk</div>
+
+<script>
+  const chat = document.getElementById("chat");
+  const mic = document.getElementById("mic");
+  const typed = document.getElementById("typed");
+  let busy = false;
+
+  function bubble(cls, text) {
+    const b = document.createElement("div");
+    b.className = "bubble " + cls;
+    b.textContent = text;
+    chat.appendChild(b);
+    b.scrollIntoView({ behavior: "smooth", block: "end" });
+    return b;
+  }
+
+  function speak(text) {
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      const voices = speechSynthesis.getVoices();
+      const nice = voices.find(v => /Samantha|Google US English|Karen|Zira/i.test(v.name))
+        || voices.find(v => v.lang.startsWith("en"));
+      if (nice) u.voice = nice;
+      u.rate = 1.0;
+      u.pitch = 1.15;
+      document.body.dataset.lastSpoken = text.slice(0, 60);
+      speechSynthesis.speak(u);
+    } catch (e) { /* no speech, text still shows */ }
+  }
+
+  async function send(text) {
+    if (busy || !text.trim()) return;
+    busy = true;
+    bubble("kid", text);
+    const dots = bubble("thinking", "● ● ●");
+    try {
+      const r = await fetch("/api/say", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const data = await r.json();
+      dots.remove();
+      const reply = data.reply || data.error || "Oops, something tangled up.";
+      bubble("tutor", reply);
+      speak(reply);
+    } catch (e) {
+      dots.remove();
+      bubble("tutor", "Oops, I lost my train of thought. Try again?");
+    }
+    busy = false;
+  }
+
+  typed.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { const t = typed.value; typed.value = ""; send(t); }
+  });
+
+  // Voice in: browser speech recognition (Chrome/Safari/Edge).
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let rec = null;
+  if (SR) {
+    rec = new SR();
+    rec.lang = "en-US";
+    rec.interimResults = false;
+    rec.maxAlternatives = 1;
+    rec.onresult = (e) => {
+      const text = e.results[0][0].transcript;
+      mic.classList.remove("listening");
+      send(text);
+    };
+    rec.onend = () => mic.classList.remove("listening");
+    rec.onerror = () => mic.classList.remove("listening");
+    mic.addEventListener("click", () => {
+      if (mic.classList.contains("listening")) { rec.stop(); return; }
+      speechSynthesis.cancel();
+      mic.classList.add("listening");
+      rec.start();
+    });
+  } else {
+    mic.addEventListener("click", () =>
+      bubble("tutor", "This browser cannot hear you, but you can type to me below!"));
+  }
+
+  document.getElementById("newchat").addEventListener("click", async () => {
+    await fetch("/api/new", { method: "POST" });
+    chat.innerHTML = "";
+    hello();
+  });
+
+  function hello() {
+    const greeting = "Hi! I'm whyAI. Ask me a WHY question, any one you like!";
+    bubble("tutor", greeting);
+  }
+  // Voices load async in some browsers; warm them up.
+  speechSynthesis.getVoices();
+  if (speechSynthesis.onvoiceschanged !== undefined) {
+    speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
+  }
+  hello();
+</script>
+</body>
+</html>
