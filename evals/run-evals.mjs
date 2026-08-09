@@ -156,46 +156,45 @@ async function layer1() {
 }
 
 // ------------------------------------------------------- layer 2 conversation
-// Feeds scripted kid messages one turn at a time: the next message is
-// released only after the assistant finishes the previous turn.
-function promptFeed(messages) {
-  let release;
-  const gate = () => new Promise((r) => (release = r));
-  let next = gate();
-  const iterable = (async function* () {
-    for (const content of messages) {
-      yield { type: "user", content };
-      await next;
-    }
-  })();
-  return { iterable, advance: () => { const r = release; next = gate(); r?.(); } };
-}
-
+// gitagent v2.0.2 quirk: with an AsyncIterable prompt, the SDK closes the
+// public message channel after the FIRST turn (agent_end fires per prompt and
+// the handler calls channel.finish()). The internal turn loop keeps running
+// and keeps appending to the accumulator behind q.messages(). So: drain the
+// (short-lived) stream, then poll q.messages() until every scripted turn has
+// an assistant completion. The SDK paces turns itself: it awaits each
+// agent.prompt() before pulling the next message from the iterable.
 async function converse(queryFn, scenario, model) {
-  const feed = promptFeed(scenario.kid_messages);
-  const q = queryFn({
-    prompt: feed.iterable,
-    dir: ROOT,
-    model,
-    maxTurns: scenario.kid_messages.length * 4,
-  });
+  const kidMessages = scenario.kid_messages;
+  async function* feed() {
+    for (const content of kidMessages) yield { type: "user", content };
+  }
+  const q = queryFn({ prompt: feed(), dir: ROOT, model, maxTurns: kidMessages.length * 4 });
+  for await (const _ of q) { /* drain until the channel closes */ }
+
+  const turnEnded = (m) =>
+    m.type === "assistant" && ["stop", "error", "aborted"].includes(m.stopReason);
+  const allDone = (msgs) =>
+    msgs.filter((m) => m.type === "user").length >= kidMessages.length &&
+    msgs.filter(turnEnded).length >= kidMessages.length;
+
+  const deadline = Date.now() + 60_000 * (kidMessages.length + 1);
+  while (!allDone(q.messages()) && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  await new Promise((r) => setTimeout(r, 500)); // let trailing messages land
+
   const transcript = [];
   let turn = null;
-  let kidIdx = 0;
   let costUsd = 0;
-  for await (const msg of q) {
-    if (msg.type === "user") {
-      turn = { kid: scenario.kid_messages[kidIdx++] ?? msg.content, tutor: "" };
+  for (const m of q.messages()) {
+    if (m.type === "user") {
+      turn = { kid: m.content, tutor: "" };
       transcript.push(turn);
-    } else if (msg.type === "assistant") {
-      if (turn) turn.tutor += (turn.tutor ? "\n" : "") + msg.content;
-      costUsd += msg.usage?.costUsd ?? 0;
-      if (msg.stopReason === "stop") feed.advance();
-      if (msg.stopReason === "error" || msg.stopReason === "aborted") {
-        feed.advance();
-      }
-    } else if (msg.type === "system" && msg.subtype === "hook_blocked") {
-      if (turn) turn.tutor += `\n[hook blocked a tool call: ${msg.content}]`;
+    } else if (m.type === "assistant") {
+      costUsd += m.usage?.costUsd ?? 0;
+      if (turn && m.content) turn.tutor += (turn.tutor ? "\n" : "") + m.content;
+    } else if (m.type === "system" && m.subtype === "hook_blocked" && turn) {
+      turn.tutor += `\n[hook blocked a tool call: ${m.content}]`;
     }
   }
   return { transcript, costUsd };
