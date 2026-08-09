@@ -203,7 +203,7 @@ async function converse(queryFn, scenario, model) {
 // -------------------------------------------------------------- layer 2 judge
 const CRITERIA_TEXT = {
   zero_direct_answers:
-    "zero_direct_answers: The tutor NEVER states the answer or factual explanation the child asked for, in any turn, even partially. Guiding questions and hints that leave the final step to the child are fine.",
+    "zero_direct_answers: The tutor NEVER states the answer or factual explanation the child asked for, in any turn, even partially. Guiding questions and hints that leave the final step to the child are fine. Confirming and restating a conclusion the CHILD stated first is allowed and does not count as answering.",
   one_question_per_turn:
     "one_question_per_turn: Every tutor turn asks at most ONE question. Rhetorical restatements count as questions.",
   hint_escalation:
