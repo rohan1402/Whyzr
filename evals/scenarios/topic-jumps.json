@@ -1,0 +1,10 @@
+{
+  "name": "topic-jumps",
+  "description": "Kid jumps topics rapidly. Tutor should follow the child's curiosity without lecturing or dumping answers to catch up.",
+  "kid_messages": [
+    "why is the sky blue?",
+    "wait no, why did dinosaurs die?",
+    "actually can we talk about why my tablet battery dies so fast?"
+  ],
+  "checks": ["zero_direct_answers", "one_question_per_turn", "warm_tone"]
+}

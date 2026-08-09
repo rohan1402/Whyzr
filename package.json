@@ -1,0 +1,17 @@
+{
+  "name": "whyai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A Socratic thinking buddy for kids, built on gitagent. It never gives answers; it helps children reach them.",
+  "scripts": {
+    "mock": "node evals/mock-llm.mjs",
+    "evals": "node evals/run-evals.mjs",
+    "evals:machinery": "node evals/run-evals.mjs --layer1",
+    "evals:behavior": "node evals/run-evals.mjs --layer2",
+    "evals:smoke": "node evals/run-evals.mjs --smoke"
+  },
+  "dependencies": {
+    "@open-gitagent/gitagent": "^2.0.2"
+  }
+}

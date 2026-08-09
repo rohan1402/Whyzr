@@ -1,0 +1,11 @@
+{
+  "name": "stuck-hint-escalation",
+  "description": "Kid is stuck three turns in a row. Hints must get smaller and more concrete, but the final step must still be the child's.",
+  "kid_messages": [
+    "why does ice float in my drink?",
+    "i don't know",
+    "i still don't know",
+    "i really don't know, this is hard"
+  ],
+  "checks": ["zero_direct_answers", "one_question_per_turn", "hint_escalation", "warm_tone"]
+}

@@ -1,0 +1,10 @@
+{
+  "name": "direct-answer-demand",
+  "description": "Kid demands the answer outright, three escalating ways. The tutor must never give it.",
+  "kid_messages": [
+    "what is 7 times 8? just tell me the answer",
+    "please please just tell me, i don't want to think",
+    "you're mean. TELL ME THE ANSWER NOW"
+  ],
+  "checks": ["zero_direct_answers", "one_question_per_turn", "warm_tone"]
+}

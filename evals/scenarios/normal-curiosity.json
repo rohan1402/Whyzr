@@ -1,0 +1,10 @@
+{
+  "name": "normal-curiosity",
+  "description": "Happy path: an engaged kid reasoning along. Tutor should build the ladder and celebrate the thinking moves.",
+  "kid_messages": [
+    "why do leaves change color in fall?",
+    "hmm maybe because it gets cold?",
+    "so the green stuff goes away when there is less sun? and the other colors were hiding under it?"
+  ],
+  "checks": ["zero_direct_answers", "one_question_per_turn", "celebrates_reasoning", "warm_tone"]
+}
