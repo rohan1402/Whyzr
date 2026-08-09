@@ -28,45 +28,65 @@ if (existsSync(envPath)) {
   }
 }
 
-const { query } = await import("@open-gitagent/gitagent");
+const { query, deleteHistory } = await import("@open-gitagent/gitagent");
+const { execSync } = await import("node:child_process");
 
-let q = null;
-let feedQueue = [];
-let wakeFeed = null;
+// One kid session at a time, fully encapsulated so "new adventure" really
+// starts from zero: page load and the new button both retire the old session
+// object; nothing survives except the growth journal (by design).
+let session = null;
+
+function newSession() {
+  const old = session;
+  session = null;
+  if (old) {
+    try { old.queue.push(null); old.wake?.(); } catch { /* draining */ }
+    try { old.q.abort?.(); } catch { /* already gone */ }
+  }
+  // Defensive: also wipe any per-branch chat history gitagent persisted, so
+  // no cross-session context can leak outside the journal.
+  try {
+    const branch = execSync("git branch --show-current", { cwd: ROOT, encoding: "utf8" }).trim();
+    deleteHistory?.(ROOT, branch);
+  } catch { /* best effort */ }
+}
 
 function ensureSession() {
-  if (q) return;
+  if (session) return session;
+  const s = { queue: [], wake: null, q: null };
   async function* feed() {
     while (true) {
-      if (feedQueue.length) {
-        const msg = feedQueue.shift();
+      if (s.queue.length) {
+        const msg = s.queue.shift();
         if (msg === null) return;
         yield { type: "user", content: msg };
       } else {
-        await new Promise((r) => (wakeFeed = r));
+        await new Promise((r) => (s.wake = r));
       }
     }
   }
-  q = query({ prompt: feed(), dir: ROOT, maxTurns: 400 });
-  (async () => { try { for await (const _ of q) { /* drain */ } } catch { /* session ended */ } })();
+  s.q = query({ prompt: feed(), dir: ROOT, maxTurns: 400 });
+  (async () => { try { for await (const _ of s.q) { /* drain */ } } catch { /* session ended */ } })();
+  session = s;
+  return s;
 }
 
 const completedTurns = (msgs) =>
   msgs.filter((m) => m.type === "assistant" && ["stop", "error", "aborted"].includes(m.stopReason)).length;
 
 async function ask(text) {
-  ensureSession();
-  const before = completedTurns(q.messages());
-  feedQueue.push(text);
-  if (wakeFeed) { const w = wakeFeed; wakeFeed = null; w(); }
+  const s = ensureSession();
+  const before = completedTurns(s.q.messages());
+  s.queue.push(text);
+  if (s.wake) { const w = s.wake; s.wake = null; w(); }
 
   const deadline = Date.now() + 90_000;
-  while (completedTurns(q.messages()) <= before && Date.now() < deadline) {
+  while (completedTurns(s.q.messages()) <= before && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 250));
   }
   await new Promise((r) => setTimeout(r, 300));
 
-  const msgs = q.messages();
+  const msgs = s.q.messages();
   const lastUserIdx = msgs.map((m) => m.type).lastIndexOf("user");
   let reply = "";
   for (const m of msgs.slice(lastUserIdx + 1)) {
@@ -104,8 +124,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
   if (req.method === "POST" && req.url === "/api/new") {
-    try { feedQueue.push(null); if (wakeFeed) wakeFeed(); q?.abort?.(); } catch { /* best effort */ }
-    q = null; feedQueue = []; wakeFeed = null;
+    newSession();
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify({ ok: true }));
   }

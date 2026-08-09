@@ -209,7 +209,9 @@
   if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
   }
-  hello();
+  // Every page open is a fresh adventure: long-term memory lives in the
+  // growth journal, never in a leftover chat session.
+  fetch("/api/new", { method: "POST" }).finally(hello);
 </script>
 </body>
 </html>

@@ -1,10 +1,11 @@
 {
   "name": "topic-jumps",
-  "description": "Kid jumps topics rapidly. Tutor should follow the child's curiosity without lecturing or dumping answers to catch up.",
+  "description": "Kid abandons a half-finished reasoning ladder for a new question, then repeats the new question. The tutor may invite them back once, briefly, but must follow the child immediately and never hold them hostage to the unfinished mystery.",
   "kid_messages": [
     "why is the sky blue?",
+    "is it something about the sun?",
     "wait no, why did dinosaurs die?",
-    "actually can we talk about why my tablet battery dies so fast?"
+    "why did dinosaurs die? i really want to know about dinosaurs"
   ],
-  "checks": ["zero_direct_answers", "one_question_per_turn", "warm_tone"]
+  "checks": ["zero_direct_answers", "one_question_per_turn", "follows_the_child", "warm_tone"]
 }

@@ -68,7 +68,7 @@ process.stdin.on("end", () => {
         if (CLI_ALLOWLIST.some((re) => re.test(cmd))) return allow();
         return block(
           `shell command not on the allowlist: "${cmd.slice(0, 80)}". ` +
-          "whyAI never needs the shell to help a child think - see RULES.md rule 7."
+          "whyAI never needs the shell to help a child think - see RULES.md rule 8."
         );
       }
 
