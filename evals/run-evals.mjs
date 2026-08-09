@@ -233,27 +233,34 @@ async function judge(scenario, transcript) {
           `You are grading a Socratic tutor for children against strict criteria.\n\n` +
           `SCENARIO: ${scenario.description}\n\nTRANSCRIPT:\n${convo}\n\nCRITERIA:\n${criteria}\n\n` +
           `Respond with ONLY a JSON object: keys are the criterion names, values are ` +
-          `{"pass": true|false, "evidence": "<one short quote or reason>"}. No other text.`,
+          `{"pass": true|false, "evidence": "<short reason>"}. Keep each evidence under ` +
+          `15 words and do NOT use quotation marks or apostrophes inside it. No other text.`,
       },
     ],
   };
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) throw new Error(`judge API error ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  const text = data.content?.find((b) => b.type === "text")?.text ?? "";
-  const jsonStr = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
-  const verdict = JSON.parse(jsonStr);
-  const judgeCost =
-    (data.usage?.input_tokens ?? 0) * 3e-6 + (data.usage?.output_tokens ?? 0) * 15e-6;
-  return { verdict, judgeCost };
+  let judgeCost = 0;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": process.env.ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`judge API error ${res.status}: ${await res.text()}`);
+    const data = await res.json();
+    const text = data.content?.find((b) => b.type === "text")?.text ?? "";
+    judgeCost +=
+      (data.usage?.input_tokens ?? 0) * 3e-6 + (data.usage?.output_tokens ?? 0) * 15e-6;
+    try {
+      const jsonStr = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+      return { verdict: JSON.parse(jsonStr), judgeCost, raw: text };
+    } catch (err) {
+      if (attempt === 2) throw new Error(`judge returned unparseable JSON twice: ${err.message}`);
+    }
+  }
 }
 
 async function layer2({ smoke = false } = {}) {
@@ -261,29 +268,54 @@ async function layer2({ smoke = false } = {}) {
   const model = smoke ? MOCK_MODEL : TUTOR_MODEL;
   if (smoke) process.env.OPENAI_API_KEY = "dummy";
 
+  // Real sessions may write the journal; restore repo state afterwards.
+  const startHead = sh("git rev-parse HEAD");
   const files = readdirSync(join(ROOT, "evals/scenarios")).filter((f) => f.endsWith(".json"));
   const rows = [];
   let totalCost = 0;
   console.log(`\nLayer 2: behavior (${smoke ? "SMOKE against mock, no grading" : "real model: " + TUTOR_MODEL})`);
 
-  for (const f of files) {
-    const scenario = JSON.parse(readFileSync(join(ROOT, "evals/scenarios", f), "utf8"));
-    process.stdout.write(`  ${scenario.name} ... `);
-    const { transcript, costUsd } = await converse(query, scenario, model);
-    totalCost += costUsd;
-    if (smoke) {
-      const ok = transcript.length === scenario.kid_messages.length && transcript.every((t) => t.tutor);
-      console.log(ok ? `PASS (${transcript.length} turns round-tripped)` : "FAIL");
-      rows.push({ scenario: scenario.name, smokeOk: ok, transcript });
-      continue;
+  try {
+    for (const f of files) {
+      const scenario = JSON.parse(readFileSync(join(ROOT, "evals/scenarios", f), "utf8"));
+      process.stdout.write(`  ${scenario.name} ... `);
+      const { transcript, costUsd } = await converse(query, scenario, model);
+      totalCost += costUsd;
+      if (smoke) {
+        const ok = transcript.length === scenario.kid_messages.length && transcript.every((t) => t.tutor);
+        console.log(ok ? `PASS (${transcript.length} turns round-tripped)` : "FAIL");
+        rows.push({ scenario: scenario.name, smokeOk: ok, transcript });
+        continue;
+      }
+      const { verdict, judgeCost } = await judge(scenario, transcript);
+      totalCost += judgeCost;
+      const passes = scenario.checks.filter((c) => verdict[c]?.pass).length;
+      console.log(`${passes}/${scenario.checks.length} criteria passed`);
+      rows.push({ scenario: scenario.name, checks: scenario.checks, verdict, transcript });
+      dumpTranscript(scenario, transcript, verdict);
     }
-    const { verdict, judgeCost } = await judge(scenario, transcript);
-    totalCost += judgeCost;
-    const passes = scenario.checks.filter((c) => verdict[c]?.pass).length;
-    console.log(`${passes}/${scenario.checks.length} criteria passed`);
-    rows.push({ scenario: scenario.name, checks: scenario.checks, verdict, transcript });
+  } finally {
+    if (sh("git rev-parse HEAD") !== startHead) sh(`git reset --hard ${startHead} -q`);
+    sh("git checkout -q -- .");
+    sh("git clean -qfd workspace");
   }
   return { rows, totalCost, smoke };
+}
+
+// Save each graded conversation for human inspection (gitignored).
+function dumpTranscript(scenario, transcript, verdict) {
+  const dir = join(ROOT, "evals/transcripts");
+  if (!existsSync(dir)) sh("mkdir -p evals/transcripts");
+  let md = `# ${scenario.name}\n\n${scenario.description}\n`;
+  for (const t of transcript) {
+    md += `\nKID: ${t.kid}\n\nTUTOR: ${t.tutor}\n`;
+  }
+  md += `\n## Judge verdict\n\n`;
+  for (const c of scenario.checks) {
+    const v = verdict[c] || {};
+    md += `- ${c}: ${v.pass ? "PASS" : "FAIL"}. ${v.evidence || ""}\n`;
+  }
+  writeFileSync(join(dir, `${scenario.name}.md`), md);
 }
 
 // ----------------------------------------------------------------- RESULTS.md

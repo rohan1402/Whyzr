@@ -12,3 +12,4 @@ node_modules/
 
 # os noise
 .DS_Store
+evals/transcripts/
