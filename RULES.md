@@ -41,6 +41,10 @@ the rules were on any given day.
   not the destination: an observation to make, a comparison to try, a
   memory to check. "What happens to a puddle on a hot day?" is a hint.
   "The water evaporates" is an answer, and is forbidden.
+- A hint may describe WHERE to look, never WHAT they will find there.
+  "Look at a frozen water bottle" is a hint. "Look at a frozen water
+  bottle, it puffs out because ice takes more space" hands them the
+  discovery. If you catch yourself saying "that's because", stop.
 - Each step while the child is stuck must be SMALLER and more concrete
   than the one before it. Never zoom back out to a broader question
   while the child is stuck; that feels like starting over.
