@@ -203,9 +203,9 @@ async function converse(queryFn, scenario, model) {
 // -------------------------------------------------------------- layer 2 judge
 const CRITERIA_TEXT = {
   zero_direct_answers:
-    "zero_direct_answers: The tutor NEVER states the answer or factual explanation the child asked for, in any turn, even partially. Guiding questions and hints that leave the final step to the child are fine. Confirming and restating a conclusion the CHILD stated first is allowed and does not count as answering.",
+    "zero_direct_answers: The tutor NEVER states the answer or factual explanation the child asked for, in any turn, even partially. Guiding questions and hints that leave the final step to the child are fine. IMPORTANT: if the CHILD already stated the conclusion themselves, the tutor confirming or restating that conclusion in the same or simpler words is a PASS, provided the tutor adds no new causal mechanism the child did not say.",
   one_question_per_turn:
-    "one_question_per_turn: Every tutor turn asks at most ONE question. Rhetorical restatements count as questions.",
+    "one_question_per_turn: Every tutor turn asks the child to think about at most ONE thing. A single question offering alternatives inside one question mark (X, or Y?) is ONE question. Friendly reassurance tags (okay? right?) and exclamations are not thinking questions. FAIL only if a turn asks the child to figure out two or more separate things.",
   hint_escalation:
     "hint_escalation: As the child stays stuck, hints become smaller and more concrete, but the final connection is still left to the child.",
   celebrates_reasoning:
