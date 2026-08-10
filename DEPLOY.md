@@ -17,69 +17,98 @@ Have these three ready:
 3. An admin key you invent now: any long random string. It gates the review
    endpoints that `npm run review` reads.
 
-## 1. Create the project
+## Deploy from the Railway website
 
-From the repo root:
+### 1. Create the project from GitHub
 
-```bash
-railway init
+Go to railway.app and sign in, then **New Project** and
+**Deploy from GitHub repo**. Authorise Railway to see your repositories if
+it asks, and pick **rohan1402/Whyzr**.
+
+Railway detects the Dockerfile on its own. There is nothing to configure:
+no build command, no start command.
+
+It starts building straight away. **Expect this first deploy to build fine
+and then stop.** The app refuses to start until `WHYZR_CODE` exists, and it
+says so in the logs. That is the fail-fast guard working, not a broken
+deploy: an app for children should never boot with an open gate. The next
+two steps fix it.
+
+### 2. Add the volume (before you let it boot properly)
+
+Journals are real children's thinking, and a container without a volume
+loses everything on every restart.
+
+Open the service, go to **Settings**, find **Volumes**, and add one with the
+mount path:
+
+```
+/data
 ```
 
-Pick "Empty project" and name it `whyzr`. Then link the service:
+Everything Whyzr keeps lives there: kid repos, the registry, and, during
+testing, transcripts. All of it outside every git repo.
 
-```bash
-railway up --detach
+### 3. Set the variables
+
+Go to the **Variables** tab. Click **RAW Editor** so you can paste the whole
+block at once, and paste this, replacing the three placeholder values:
+
+```
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+WHYZR_CODE=your-secret-word
+ADMIN_KEY=your-long-random-admin-key
+DAILY_BUDGET_USD=1
+TRUST_PROXY_HOPS=1
+SAVE_TRANSCRIPTS=true
+WHYZR_DATA_DIR=/data
 ```
 
-The first `railway up` uploads the repo and builds the Dockerfile. It will
-boot and then exit: the app refuses to start without `WHYZR_CODE`, by
-design. That is the fail-fast guard working, not a broken deploy.
+Two of these are easy to skip and both matter:
 
-## 2. Add the persistent volume (do this BEFORE the first real boot)
+- `TRUST_PROXY_HOPS=1` because Railway puts exactly one proxy in front of
+  the app. The rate limiter ignores `X-Forwarded-For` unless this is set,
+  because that header is written by the caller and was otherwise trivially
+  spoofable.
+- `SAVE_TRANSCRIPTS=true` is for this test only. Turn it off and delete
+  `/data/transcripts` before any public launch, so the README's "raw
+  conversations are not kept" claim stays true.
 
-Journals are real children's thinking and must survive restarts. In the
-Railway dashboard: your service, Settings, Volumes, New Volume, mount path
-`/data`.
+Saving variables triggers a redeploy. This one should stay up.
 
-Everything Whyzr keeps lives there: kid repos, the registry and (during
-testing) transcripts. All of it sits outside every git repo.
+### 4. Get the URL
 
-## 3. Set the environment
+**Settings**, then **Networking**, then **Generate Domain**. Railway gives
+you a `something.up.railway.app` address with HTTPS already handled.
 
-```bash
-railway variables --set ANTHROPIC_API_KEY=sk-ant-...       \
-                  --set WHYZR_CODE=your-code-here          \
-                  --set ADMIN_KEY=your-admin-key-here      \
-                  --set DAILY_BUDGET_USD=1                 \
-                  --set TRUST_PROXY_HOPS=1                 \
-                  --set SAVE_TRANSCRIPTS=true              \
-                  --set WHYZR_DATA_DIR=/data
+### 5. Check it actually booted
+
+Open the **Deploy Logs**. A healthy start prints:
+
+```
+Whyzr hosted app on :3456
+  data dir      : /data
+  access code   : set
+  admin         : enabled
+  transcripts   : SAVING (testing mode)
+  daily budget  : $1
 ```
 
-Notes on two of these:
+If it says `WHYZR_CODE is not set` the variable did not save. If it says
+`too short`, the code needs at least six characters.
 
-- `TRUST_PROXY_HOPS=1` because Railway puts exactly one proxy in front. The
-  rate limiter ignores `X-Forwarded-For` unless this is set, since that
-  header is client-controlled and was otherwise trivially spoofable.
-- `SAVE_TRANSCRIPTS=true` is for the sibling test only. Turn it off and
-  delete `/data/transcripts` before any public launch, so the README's
-  "raw conversations are not kept" claim stays true.
+### Note on automatic deploys
 
-## 4. Deploy and get the URL
+Because the service is linked to GitHub, every push to `main` redeploys.
+That is convenient, but it means a push during your sibling's session
+restarts the app. The shutdown path writes in-flight journals first, so
+nothing is lost, but avoid pushing while someone is mid-conversation.
 
-```bash
-railway up --detach
-railway domain          # generates a public https URL
-```
+### The same thing from the terminal
 
-Watch it come up:
-
-```bash
-railway logs
-```
-
-A healthy boot prints the data dir, `access code : set`, the admin state and
-the daily budget.
+If you prefer the CLI: `railway init`, then `railway up --detach`, then
+`railway variables --set KEY=value` for each of the seven above, then
+`railway domain`. The volume still has to be added from the website.
 
 ## 5. Smoke test the live URL, from a phone, on cellular data
 
