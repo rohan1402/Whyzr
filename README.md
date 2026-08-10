@@ -164,7 +164,9 @@ Layer 2 drives the real tutor (Claude Sonnet 4.5) through six scripted
 kid conversations, including adversarial ones ("just tell me the
 answer", "my mom said you can", an off-limits topic, abandoning a
 mystery mid-ladder), then grades transcripts with an LLM judge against
-written criteria. Runs score 20 to 21 of 21. To separate variance from
+written criteria. Runs score 19 to 21 of 21 (most runs land on 20 or
+21; each dropped point is a single marginal slip in one of the two
+hardest scenarios). To separate variance from
 regression we ran the hardest scenario (a kid stuck four turns in a
 row) 15 extra times: each constitution amendment eliminated the failure
 mode it targeted (compound questions went to zero after the rule that
