@@ -37,8 +37,27 @@ import { listTranscripts, readTranscript } from "./transcripts.mjs";
 ensureDataDirs();
 
 // Device tokens issued before any kid exists (very first visit). A token here
-// may complete setup exactly once, after which it is bound to that kid.
-const pendingTokens = new Set();
+// may complete setup EXACTLY ONCE, then it is bound to that kid. Entries
+// expire: an unbounded, never-expiring set was both a slow leak and a way to
+// keep minting setup rights forever.
+const PENDING_TTL_MS = 30 * 60_000;
+const pendingTokens = new Map(); // token -> expiry
+
+function addPending(token) {
+  const now = Date.now();
+  for (const [t, exp] of pendingTokens) if (exp < now) pendingTokens.delete(t);
+  if (pendingTokens.size > 50) return false; // crude flood ceiling
+  pendingTokens.set(token, now + PENDING_TTL_MS);
+  return true;
+}
+
+/** Atomically consume a pending token: it works once or not at all. */
+function takePending(token) {
+  const exp = pendingTokens.get(token);
+  if (!exp) return false;
+  pendingTokens.delete(token);
+  return exp >= Date.now();
+}
 
 const page = (name) => readFileSync(join(REPO_ROOT, "ui", name));
 // No admin page by design: review is a terminal job (npm run review), not a
@@ -85,11 +104,27 @@ function foreignOrigin(req) {
   }
 }
 
+/**
+ * The client IP. X-Forwarded-For is attacker-controlled, so the leftmost
+ * entry is worthless for rate limiting: a random header per request bought a
+ * fresh bucket every time. Only consult XFF when the number of proxies in
+ * front is configured, and then take the hop the nearest trusted proxy wrote.
+ */
+function clientIp(req) {
+  const hops = config.trustProxyHops;
+  if (hops > 0) {
+    const chain = String(req.headers["x-forwarded-for"] || "")
+      .split(",").map((s) => s.trim()).filter(Boolean);
+    const ip = chain[chain.length - hops];
+    if (ip) return ip;
+  }
+  return req.socket.remoteAddress || "unknown";
+}
+
 // Simple in-memory token bucket per IP. One small instance, low concurrency.
 const buckets = new Map();
 function rateLimited(req) {
-  const ip = (req.headers["x-forwarded-for"] || "").split(",")[0].trim() ||
-    req.socket.remoteAddress || "unknown";
+  const ip = clientIp(req);
   const now = Date.now();
   const b = buckets.get(ip) || { count: 0, resetAt: now + config.rateWindowMs };
   if (now > b.resetAt) { b.count = 0; b.resetAt = now + config.rateWindowMs; }
@@ -138,9 +173,14 @@ async function handle(req, res, url) {
     // when setup completes.
     const token = auth.issueToken();
     const kids = Object.keys(registry.read().kids);
-    if (kids.length === 1) await auth.bindToken(kids[0], token);
-    else pendingTokens.add(token);
-    return json(res, 200, { ok: true, setUp: kids.length === 1 }, { "set-cookie": auth.tokenCookie(token) });
+    // Bind straight to the existing kid when the deployment holds exactly one
+    // (M1's shape). Otherwise hand out a short-lived setup token.
+    if (kids.length >= 1 && kids.length >= config.maxKids) {
+      await auth.bindToken(kids[0], token);
+      return json(res, 200, { ok: true, setUp: true }, { "set-cookie": auth.tokenCookie(token) });
+    }
+    if (!addPending(token)) return json(res, 429, { error: "Too many setups in progress. Try again shortly." });
+    return json(res, 200, { ok: true, setUp: false }, { "set-cookie": auth.tokenCookie(token) });
   }
 
   if (req.method === "GET" && pathname === "/api/me") {
@@ -153,16 +193,24 @@ async function handle(req, res, url) {
       });
     }
     const token = auth.parseCookies(req).whyzr_token;
-    const authed = LOCAL_DEV || (token && pendingTokens.has(token));
-    return json(res, 200, { authed: Boolean(authed), setUp: false, napping: caps.napping(), localDev: LOCAL_DEV });
+    const pendingOk = Boolean(token) && (pendingTokens.get(token) ?? 0) >= Date.now();
+    return json(res, 200, {
+      authed: LOCAL_DEV || pendingOk, setUp: false,
+      napping: caps.napping(), localDev: LOCAL_DEV,
+    });
   }
 
   // --- kid: first-run setup
   if (req.method === "POST" && pathname === "/api/setup") {
     const token = auth.parseCookies(req).whyzr_token;
     const existing = auth.kidFromRequest(req);
-    if (!LOCAL_DEV && !existing && !(token && pendingTokens.has(token))) {
+    // Consume the setup token atomically so it can never create two kids.
+    const pendingOk = Boolean(token) && takePending(token);
+    if (!LOCAL_DEV && !existing && !pendingOk) {
       return json(res, 401, { error: "Enter the code first." });
+    }
+    if (!existing && Object.keys(registry.read().kids).length >= config.maxKids) {
+      return json(res, 403, { error: "This Whyzr is already set up for a child." });
     }
     const { nickname, age, pin, parentConfirmed } = await body(req);
     if (!nickname || String(nickname).trim().length < 1) return json(res, 400, { error: "Pick a nickname." });
@@ -191,7 +239,6 @@ async function handle(req, res, url) {
     provisionKidRepo(kidId, snap.branch);
     const bind = token || auth.issueToken();
     await auth.bindToken(kidId, bind);
-    pendingTokens.delete(token);
     return json(res, 200, { ok: true, nickname: String(nickname).trim(), age: snap.age, note: snap.note },
       { "set-cookie": auth.tokenCookie(bind) });
   }
@@ -241,12 +288,26 @@ async function handle(req, res, url) {
 
   // --- parent
   if (req.method === "POST" && pathname === "/api/parent/login") {
+    // The parent surface sits BEHIND the access code, exactly like the kid
+    // surface: the kid is resolved strictly from this device's bound token.
+    // (An earlier version fell back to "the first kid in the registry", which
+    // let anyone with no cookie and no code reach a child's data behind a
+    // 4-digit PIN. Found in audit; regression-tested.)
+    const kidId = auth.kidFromRequest(req);
+    if (!kidId) return json(res, 401, { error: "Open Whyzr on this device first." });
+
+    const lock = auth.pinLockState(kidId);
+    if (lock.locked) {
+      return json(res, 429, { error: `Too many tries. Wait ${lock.waitSeconds} seconds and try again.` });
+    }
     const { pin } = await body(req);
-    const kidId = auth.kidFromRequest(req) || Object.keys(registry.read().kids)[0];
-    const kid = kidId ? registry.getKid(kidId) : null;
+    const kid = registry.getKid(kidId);
     if (!kid || !auth.verifyPin(pin, kid.pinHash)) {
+      await auth.notePinFailure(kidId);
+      console.warn(`[whyzr] failed parent PIN for ${kidId}`);
       return json(res, 401, { error: "That PIN did not match." });
     }
+    await auth.clearPinFailures(kidId);
     return json(res, 200, { ok: true, token: issueParentToken(kidId), nickname: kid.nickname });
   }
 

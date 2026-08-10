@@ -36,8 +36,9 @@ export const config = {
   // registry, kid repos, transcripts. Never committed, never agent-readable.
   dataDir: process.env.WHYZR_DATA_DIR || join(REPO_ROOT, ".whyzr-data"),
 
-  // Access. No default: if unset we are in local dev and the gate is open.
-  code: process.env.WHYZR_CODE || null,
+  // Access. Note the distinction between UNSET and SET-BUT-EMPTY: an empty
+  // WHYZR_CODE is a deploy typo, not permission to run without a gate.
+  code: process.env.WHYZR_CODE ?? null,
   adminKey: process.env.ADMIN_KEY || null,
 
   // Session shape
@@ -55,12 +56,38 @@ export const config = {
   // Rate limiting (per IP, in-memory; fine for one small instance)
   rateWindowMs: num("RATE_WINDOW_MS", 60_000),
   rateMaxRequests: num("RATE_MAX_REQUESTS", 60),
+
+  // How many trusted proxies sit in front of this app. X-Forwarded-For is
+  // client-controlled, so it is only consulted when this is set (Railway and
+  // Fly both put exactly one proxy in front: TRUST_PROXY_HOPS=1).
+  trustProxyHops: Number(process.env.TRUST_PROXY_HOPS || 0),
+
+  // M1 is a single-tester deployment. Refuse to mint more kids than this so a
+  // leaked code cannot fill the volume with repos.
+  maxKids: num("MAX_KIDS", 1),
 };
 
-// With no code configured we are running on a developer's machine: the gate
-// opens so local testing needs no secrets. In production the code is set, so
-// this is never true.
-export const LOCAL_DEV = config.code === null;
+// Dev mode is an EXPLICIT opt-in, never an inference from a missing secret.
+// Inferring it meant a deploy that set WHYZR_CODE to an empty string (or
+// forgot it entirely) silently served the app with no gate at all.
+export const LOCAL_DEV = bool("WHYZR_OPEN_DEV", false);
+
+// Fail fast rather than fail open: in any non-dev run the code must exist and
+// be long enough to be worth typing.
+if (!LOCAL_DEV) {
+  if (config.code === null) {
+    console.error(
+      "\nWHYZR_CODE is not set.\n" +
+      "Set it to the access code testers will type, or set WHYZR_OPEN_DEV=1 to\n" +
+      "run locally with no gate. Refusing to start ungated.\n"
+    );
+    process.exit(1);
+  }
+  if (config.code.trim().length < 6) {
+    console.error("\nWHYZR_CODE is empty or too short (minimum 6 characters). Refusing to start.\n");
+    process.exit(1);
+  }
+}
 
 export const paths = {
   registry: () => join(config.dataDir, "registry.json"),

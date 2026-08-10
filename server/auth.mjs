@@ -95,6 +95,41 @@ export function verifyPin(pin, stored) {
   return safeEqual(candidate, hash);
 }
 
+// Parent PIN lockout. A 4-digit PIN is only 10,000 guesses, so attempts are
+// counted per kid and backed off hard. State lives in the registry so it
+// survives a restart (an attacker could otherwise reset it by waiting for a
+// deploy).
+const PIN_FREE_TRIES = 5;
+const PIN_BACKOFF_MS = 60_000;   // after the free tries: 1min, 2min, 4min...
+const PIN_MAX_BACKOFF_MS = 60 * 60_000;
+
+export function pinLockState(kidId) {
+  const kid = read().kids[kidId];
+  const f = kid?.pinFailures;
+  if (!f || f.count <= PIN_FREE_TRIES) return { locked: false };
+  const steps = Math.min(f.count - PIN_FREE_TRIES - 1, 6);
+  const wait = Math.min(PIN_BACKOFF_MS * 2 ** steps, PIN_MAX_BACKOFF_MS);
+  const remaining = f.lastAt + wait - Date.now();
+  return remaining > 0
+    ? { locked: true, waitSeconds: Math.ceil(remaining / 1000) }
+    : { locked: false };
+}
+
+export function notePinFailure(kidId) {
+  return update((reg) => {
+    const kid = reg.kids[kidId];
+    if (!kid) return;
+    const f = kid.pinFailures || { count: 0, lastAt: 0 };
+    kid.pinFailures = { count: f.count + 1, lastAt: Date.now() };
+  });
+}
+
+export function clearPinFailures(kidId) {
+  return update((reg) => {
+    if (reg.kids[kidId]) reg.kids[kidId].pinFailures = { count: 0, lastAt: 0 };
+  });
+}
+
 export function checkAdminKey(submitted) {
   if (!config.adminKey) return false; // no key configured, admin stays shut
   return safeEqual(submitted || "", config.adminKey);

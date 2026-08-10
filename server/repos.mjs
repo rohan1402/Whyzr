@@ -22,6 +22,10 @@ import { REPO_ROOT, paths, ensureDataDirs } from "./config.mjs";
 
 const AGE_BRANCHES = ["age-5", "main", "age-12"];
 
+// Tag written at clone time marking the exact template state this kid started
+// from. It is what "restore original" restores.
+export const TEMPLATE_TAG = "whyzr-template-base";
+
 /** Run git in a directory. Args are an array: never a shell string. */
 export function git(cwd, args, opts = {}) {
   return execFileSync("git", args, {
@@ -90,11 +94,19 @@ export function provisionKidRepo(kidId, branch) {
     git(dest, ["remote", "remove", remote]);
   }
 
-  if (branch && branch !== "main") git(dest, ["checkout", "--quiet", branch]);
+  // Always check out explicitly: without this, a kid snapped to "main"
+  // inherits whatever branch the server's own repo happened to be on.
+  git(dest, ["checkout", "--quiet", branch || "main"]);
 
   // Identity for journal + parent-edit commits made inside this clone.
   git(dest, ["config", "user.name", "Whyzr"]);
   git(dest, ["config", "user.email", "whyzr@localhost"]);
+
+  // Mark the state this kid was provisioned with. "Restore original rules"
+  // means THIS, not the oldest version in history: walking back through the
+  // log would revert every constitution amendment ever made and hand the
+  // child a tutor governed by the very first draft of the rules.
+  git(dest, ["tag", TEMPLATE_TAG]);
 
   assertNoRemotes(dest);
   return dest;
@@ -139,15 +151,24 @@ export function commitParentEdit(repoDir, relPath, message) {
   return git(repoDir, ["rev-parse", "--short", "HEAD"]);
 }
 
-/** Restore a tracked file to its state at the repo's first commit. */
+/**
+ * Restore a file to the state this kid's repo was PROVISIONED with, using the
+ * tag written at clone time. Never walk back through history looking for the
+ * "first" version: that would restore a pre-amendment constitution.
+ */
 export function restoreOriginal(repoDir, relPath) {
   assertNoRemotes(repoDir);
-  const root = git(repoDir, ["rev-list", "--max-parents=0", "HEAD"]).split("\n")[0];
-  // Prefer the newest commit that is an ancestor of the branch point: the
-  // template's own last state. Simplest correct choice: the version at the
-  // branch's earliest commit that contains the file.
-  const firstWithFile = git(repoDir, ["log", "--reverse", "--format=%H", "--", relPath]).split("\n")[0] || root;
-  git(repoDir, ["checkout", firstWithFile, "--", relPath]);
+  let base = TEMPLATE_TAG;
+  try {
+    git(repoDir, ["rev-parse", "--verify", `${TEMPLATE_TAG}^{commit}`]);
+  } catch {
+    // Repo provisioned before tagging existed. Fall back to the newest commit
+    // that is NOT a parent edit, which is the last template-authored state.
+    const log = git(repoDir, ["log", "--format=%H%x09%s", "--", relPath]).split("\n").filter(Boolean);
+    const clean = log.find((l) => !/^\S+\t(Edited by parent|Restore original)/.test(l));
+    base = clean ? clean.split("\t")[0] : "HEAD";
+  }
+  git(repoDir, ["checkout", base, "--", relPath]);
   return commitParentEdit(repoDir, relPath, `Restore original ${relPath}`);
 }
 
