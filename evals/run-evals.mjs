@@ -188,15 +188,24 @@ async function layer1() {
   {
     const hosted = "WHYZR_OPEN_DEV=1 node --input-type=module -e";
 
-    // A missing or empty access code must refuse to start, never serve ungated.
+    // A missing or empty access code must refuse to START THE SERVER, never
+    // serve ungated. Exercises the same assertion app.mjs runs at boot.
+    const startCheck = `import("./server/config.mjs").then((m) => m.assertServerConfig())`;
     for (const [env, name] of [["", "missing"], ['WHYZR_CODE=""', "empty"], ['WHYZR_CODE=abc', "too short"]]) {
       let refused = false;
       try {
-        execSync(`${env} node --input-type=module -e 'import("./server/config.mjs")'`,
+        execSync(`${env} node --input-type=module -e '${startCheck}'`,
           { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
       } catch { refused = true; }
       check(`hosted: ${name} access code refuses to start (no fail-open)`, refused);
     }
+    // ...and a proper code starts fine.
+    let ok = true;
+    try {
+      execSync(`WHYZR_CODE=properlongcode node --input-type=module -e '${startCheck}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+    } catch { ok = false; }
+    check("hosted: a valid access code starts normally", ok);
 
     // "Restore original rules" must return the provisioned constitution, not
     // the oldest version in history (which predates every amendment).
