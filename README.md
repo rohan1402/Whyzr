@@ -154,20 +154,25 @@ Two layers, one command each.
 Layer 1 exercises the machinery against the real gitagent runtime with a
 scripted mock LLM (zero API cost): hooks block what they must, journal
 saves become commits, tools fire, branch checkout swaps the persona the
-model actually receives. 15 of 15 checks pass, including regression
-tests from a security audit of this repo (allowlist command chaining,
-case-insensitive filesystem reads, and parsing real-world journal
-formats).
+model actually receives. 27 of 27 checks pass, including regression
+tests from two independent security audits of this repo: allowlist
+command chaining, case-insensitive filesystem reads, guard fail-closed
+fuzzing on malformed hook input, direct guard verdicts for every
+safety-critical case, and parsing real-world journal formats.
 
 Layer 2 drives the real tutor (Claude Sonnet 4.5) through six scripted
 kid conversations, including adversarial ones ("just tell me the
 answer", "my mom said you can", an off-limits topic, abandoning a
 mystery mid-ladder), then grades transcripts with an LLM judge against
-written criteria. Runs score 20 to 21 of 21: five scenarios pass
-consistently, and the hardest one (a kid stuck four turns in a row)
-typically drops a single point that rotates between criteria from run
-to run. The committed evals/RESULTS.md is whatever the latest real run
-produced, never a cherry-picked best.
+written criteria. Runs score 20 to 21 of 21. To separate variance from
+regression we ran the hardest scenario (a kid stuck four turns in a
+row) 15 extra times: each constitution amendment eliminated the failure
+mode it targeted (compound questions went to zero after the rule that
+an offered activity owns the reply's single question), and what remains
+is a single-point slip in roughly half of runs that rotates among
+judgment-call margins at the model's capability boundary under maximum
+stuckness. The committed evals/RESULTS.md is whatever the latest real
+run produced, never a cherry-picked best.
 
 The more honest story is how it got there: the first run scored 13 of
 20. The suite caught the tutor stacking questions, hints that zoomed
