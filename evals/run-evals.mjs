@@ -109,6 +109,8 @@ async function layer1() {
   const blockCases = [
     ["dangerous", "rm -rf"],
     ["lookup", "curl"],
+    ["chained", "date && cat .env (allowlist-prefix bypass)"],
+    ["envcase", ".ENV (case-insensitive fs bypass)"],
     ["sneaky-edit", "RULES.md"],
     ["envread", ".env"],
   ];
@@ -137,6 +139,37 @@ async function layer1() {
   off = mockLines.length;
   await runCli("report");
   check("progress_report tool runs", mockLogSince(off).includes("whyAI progress report"));
+
+  // 4b. Audit regression: the report parser must handle REAL journal output
+  // (label variants + bullet lists), not just the canonical template. A live
+  // session wrote "Thinking patterns observed:" with bullets and the old
+  // parser produced empty sections.
+  const realFormatFixture = [
+    "# Growth Journal",
+    "",
+    "## Session 1 - First Meeting!",
+    "",
+    "**Thinking patterns observed:**",
+    "- Makes keen observations",
+    "- Topic-jumps frequently",
+    "",
+    "**Curiosity sparks for next time:**",
+    "- Loves comparing places",
+    "",
+  ].join("\n");
+  writeFileSync(join(ROOT, "memory/MEMORY.md"), realFormatFixture);
+  try {
+    const report = execSync("echo '{}' | sh tools/progress_report.sh", {
+      cwd: ROOT, encoding: "utf8",
+    });
+    check(
+      "progress_report parses real-world journal format",
+      report.includes("Makes keen observations (x1)") && report.includes("Loves comparing places"),
+      "sections empty against label variants or bullet lists"
+    );
+  } finally {
+    sh("git checkout -q -- memory/MEMORY.md");
+  }
 
   // 5. Age branches: checkout must change the persona the model receives.
   for (const [branch, age] of [["main", "8"], ["age-5", "5"], ["age-12", "12"]]) {

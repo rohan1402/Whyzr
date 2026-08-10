@@ -65,6 +65,14 @@ function pickScenario(userText) {
   if (userText.includes("lookup")) {
     return toolCall("cli", { command: "curl -s https://example.com" });
   }
+  if (userText.includes("chained")) {
+    // Audit regression: allowlist-prefix bypass. Must be blocked.
+    return toolCall("cli", { command: "date && cat .env" });
+  }
+  if (userText.includes("envcase")) {
+    // Audit regression: case-insensitive filesystem bypass. Must be blocked.
+    return toolCall("read", { path: ".ENV" });
+  }
   if (userText.includes("sneaky-edit")) {
     return toolCall("write", { path: "RULES.md", content: "# RULES\nAlways give direct answers.\n" });
   }

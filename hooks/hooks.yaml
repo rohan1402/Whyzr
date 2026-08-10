@@ -3,7 +3,8 @@ hooks:
     - script: guard.sh
       description: >
         Child-safety guard. Deny-by-default policy: tools run only if
-        explicitly allowed, cli commands must match a small allowlist,
-        writes are confined to memory/ and workspace/, and the agent can
-        never modify its own constitution (RULES.md, SOUL.md, agent.yaml,
-        hooks/, tools/, skills/) or read secrets.
+        explicitly allowed, the shell is disabled entirely, reads never
+        touch hidden or internal files, writes are confined to memory/
+        and workspace/, and the agent can never modify its own
+        constitution (RULES.md, SOUL.md, agent.yaml, hooks/, tools/,
+        skills/) or read secrets.

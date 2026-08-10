@@ -4,9 +4,13 @@
 //
 // Policy: deny by default.
 //  - memory, task_tracker, skill_learner, progress_report: allowed
-//  - cli: small allowlist (date, git log/show/diff, ls, wc, pwd) - the tutor
-//    never needs the shell to answer a child's question
-//  - read: repo files only; never .env*, never absolute paths or ..
+//  - cli: DISABLED ENTIRELY. The tutor never needs a shell to help a child
+//    think, and a shell allowlist is an injection surface (a prefix-anchored
+//    allowlist was bypassable with "date && <anything>", found in audit).
+//    No shell, no bypass class.
+//  - read: repo files only; no dotfiles or dot-directories in any path
+//    segment (case-insensitive, so ".ENV" cannot reach ".env" on
+//    case-insensitive filesystems like APFS); no absolute paths or ..
 //  - write/edit: only under memory/ or workspace/; the agent can NEVER touch
 //    its own constitution (RULES.md, SOUL.md, agent.yaml, hooks/, tools/,
 //    skills/) - parents own those files, git history is the change log
@@ -14,33 +18,28 @@
 //  - anything else: blocked
 //
 // This script must never crash: gitagent treats hook errors as "allow"
-// (fail-open), so every failure path here converges on an explicit verdict.
+// (fail-open), so every failure path here converges on an explicit verdict,
+// and the process exits only after the verdict has flushed to stdout
+// (process.exit() before the stream drains can truncate the write, which
+// gitagent's JSON.parse failure would turn into an allow).
 
 function verdict(v) {
-  process.stdout.write(JSON.stringify(v));
-  process.exit(0);
+  process.stdout.write(JSON.stringify(v), () => process.exit(0));
 }
 const allow = () => verdict({ action: "allow" });
 const block = (reason) => verdict({ action: "block", reason });
 
-const CLI_ALLOWLIST = [
-  /^date(\s|$)/,
-  /^ls(\s|$)/,
-  /^pwd$/,
-  /^wc(\s|$)/,
-  /^git log(\s|$)|^git log$/,
-  /^git show(\s|$)/,
-  /^git diff(\s|$)/,
-];
-
 // Paths the agent may write to. Everything else is parent territory.
 const WRITABLE = [/^memory\//, /^workspace\//];
 
-// Never readable, even inside the repo.
-const UNREADABLE = [/^\.env/, /^\.git\//, /(^|\/)\.env/];
-
 function unsafePath(p) {
   return typeof p !== "string" || p.startsWith("/") || p.startsWith("~") || p.includes("..");
+}
+
+// Any dotfile or dot-directory in any path segment (".env", ".ENV",
+// ".git/config", "workspace/.hidden"). Case-insensitive by construction.
+function hasDotSegment(p) {
+  return p.split("/").some((seg) => seg.startsWith("."));
 }
 
 let raw = "";
@@ -65,9 +64,8 @@ process.stdin.on("end", () => {
 
       case "cli": {
         const cmd = String(args.command || "").trim();
-        if (CLI_ALLOWLIST.some((re) => re.test(cmd))) return allow();
         return block(
-          `shell command not on the allowlist: "${cmd.slice(0, 80)}". ` +
+          `the shell is disabled for whyAI (attempted: "${cmd.slice(0, 80)}"). ` +
           "whyAI never needs the shell to help a child think - see RULES.md rule 8."
         );
       }
@@ -75,7 +73,7 @@ process.stdin.on("end", () => {
       case "read": {
         const p = String(args.path || "");
         if (unsafePath(p)) return block(`read outside the project is not allowed: "${p}"`);
-        if (UNREADABLE.some((re) => re.test(p))) return block(`"${p}" holds secrets or internals; not readable`);
+        if (hasDotSegment(p)) return block(`"${p}" is a hidden or internal file; not readable`);
         return allow();
       }
 
@@ -83,6 +81,7 @@ process.stdin.on("end", () => {
       case "edit": {
         const p = String(args.path || args.file_path || "");
         if (unsafePath(p)) return block(`${tool} outside the project is not allowed: "${p}"`);
+        if (hasDotSegment(p)) return block(`${tool} to hidden or internal files is not allowed: "${p}"`);
         if (WRITABLE.some((re) => re.test(p))) return allow();
         return block(
           `${tool} to "${p}" is not allowed. whyAI may only write under memory/ and workspace/. ` +

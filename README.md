@@ -123,13 +123,17 @@ amendments, each driven by eval evidence or field testing:
 The hard limits do not live in prompts at all. hooks/guard.mjs runs
 before every tool call, deny by default:
 
-- Shell commands: tiny allowlist (date, ls, git log and friends). The
-  tutor never needs the shell to help a child think, so rm, curl, and
-  everything else is blocked before execution.
+- Shell: disabled entirely. The tutor never needs a shell to help a
+  child think, and an allowlist is an injection surface (a security
+  audit of this repo found a prefix-anchored allowlist bypassable with
+  "date && anything", so the shell went away; the audit regression
+  lives in the eval suite).
 - Writes: only under memory/ and workspace/. The agent can NEVER edit
   RULES.md, SOUL.md, its own configuration, hooks, tools, or skills.
   The constitution belongs to parents.
-- Reads: no .env, no .git internals, no paths outside the project.
+- Reads: no hidden or internal files in any path segment, checked
+  case-insensitively (".ENV" cannot reach ".env" on macOS), no paths
+  outside the project.
 - Camera (capture_photo): blocked entirely.
 - Unknown tools: blocked.
 

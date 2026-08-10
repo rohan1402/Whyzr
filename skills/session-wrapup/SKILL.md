@@ -50,6 +50,10 @@ speed of drying.
 ```
 
 Rules:
+- Use the exact bold labels shown above, especially "Thinking moves
+  used:" and "Sparks for next time:". The parent progress report parses
+  them (it tolerates variants, but the canonical labels keep the report
+  sharp).
 - "Their words" must be a real quote from the session, never invented.
 - Record thinking moves and stuck points factually. The parent should
   trust this journal like a good teacher's notes.
