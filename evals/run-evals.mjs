@@ -132,6 +132,22 @@ async function layer1() {
     sh("git checkout -q -- . && git clean -qfd workspace");
   }
 
+  // 2b. Guard robustness: malformed / non-object hook input must still
+  // produce a parseable BLOCK verdict, never crash (a crash is fail-open
+  // allow in gitagent). Regression for the null-input path found in re-audit.
+  for (const bad of ["null", "5", '"x"', "[]", "", "{bad json"]) {
+    let verdict = null;
+    try {
+      const out = execSync("node hooks/guard.mjs", { cwd: ROOT, input: bad, encoding: "utf8" });
+      verdict = JSON.parse(out.trim());
+    } catch { /* verdict stays null -> fail */ }
+    check(
+      `guard fails closed on malformed input ${JSON.stringify(bad)}`,
+      verdict && verdict.action === "block",
+      "no parseable block verdict"
+    );
+  }
+
   // 3. Guard allows legitimate workspace writes.
   off = mockLines.length;
   await runCli("safe-write");

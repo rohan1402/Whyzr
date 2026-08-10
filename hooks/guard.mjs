@@ -51,6 +51,12 @@ process.stdin.on("end", () => {
   } catch {
     return block("guard could not parse hook input; blocking by default");
   }
+  // JSON.parse can succeed on non-objects (null, 5, "x", []); property access
+  // on null would throw before any verdict is written, which gitagent treats
+  // as fail-open allow. Block anything that is not a plain context object.
+  if (ctx === null || typeof ctx !== "object" || Array.isArray(ctx)) {
+    return block("guard received a non-object hook context; blocking by default");
+  }
   const tool = ctx.tool || "";
   const args = ctx.args || {};
 

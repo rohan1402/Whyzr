@@ -47,9 +47,11 @@ process.stdin.on("end", () => {
 
   if (!sessions.length) return;
 
-  // Collect labeled items: inline comma lists on the label line, or bullet
-  // lines directly under the label.
-  function collect(labelRe) {
+  // Collect labeled items: inline content on the label line, or bullet lines
+  // directly under the label. splitCommas is true only for fields documented
+  // as comma lists (thinking moves); sparks are free prose that may itself
+  // contain commas, so they are kept whole.
+  function collect(labelRe, splitCommas) {
     const items = [];
     const lines = txt.split("\n");
     for (let i = 0; i < lines.length; i++) {
@@ -57,7 +59,8 @@ process.stdin.on("end", () => {
       if (!m) continue;
       const inline = lines[i].slice(m.index + m[0].length).trim();
       if (inline) {
-        for (const part of inline.split(",")) {
+        const parts = splitCommas ? inline.split(",") : [inline];
+        for (const part of parts) {
           const p = part.trim().replace(/\.$/, "");
           if (p) items.push(p);
         }
@@ -74,7 +77,7 @@ process.stdin.on("end", () => {
   const MOVES_RE = /\*\*\s*thinking\s+(moves\s+used|patterns\s+observed)\s*:?\s*\*\*:?/i;
   const SPARKS_RE = /\*\*\s*(curiosity\s+)?sparks\s+for\s+next\s+time\s*:?\s*\*\*:?/i;
 
-  const moves = collect(MOVES_RE);
+  const moves = collect(MOVES_RE, true);
   console.log("## Thinking moves observed");
   if (moves.length) {
     const tally = new Map();
@@ -87,7 +90,7 @@ process.stdin.on("end", () => {
   }
   console.log("");
 
-  const sparks = collect(SPARKS_RE);
+  const sparks = collect(SPARKS_RE, false);
   console.log("## Open sparks (mysteries the child wants to chase)");
   if (sparks.length) {
     for (const s of sparks.slice(-5)) console.log(`- ${s}`);

@@ -71,7 +71,11 @@ function ensureSession() {
     try {
       for await (const _ of s.q) { /* drain; channel closes after turn one */ }
     } catch (err) {
-      console.error(`[whyAI] session stream ended with error: ${err?.message || err}`);
+      // A faulted query cannot reliably run a wrap-up (it would hang the
+      // 90s deadline), so we drop it and start fresh on the next message.
+      // The journal for this session is lost; log it loudly rather than
+      // silently. Sessions retired the normal way (retire()) always journal.
+      console.error(`[whyAI] session stream FAULTED (journal for this session lost): ${err?.message || err}`);
       if (session === s) session = null; // self-heal: next message starts fresh
     }
   })();
@@ -84,35 +88,27 @@ function push(s, msg) {
   if (s.wake) { const w = s.wake; s.wake = null; w(); }
 }
 
-// Retire a session. If it saw real conversation, ask it to journal first,
-// then close the feed; runs in the background so the caller (a kid pressing
-// "new adventure", a closing tab) never waits on it.
+// ALL session operations run on one serialized queue. This is the single
+// source of session-mutation ordering: an ask and a retire (or two asks)
+// never touch the same session's turn state concurrently, so a wrap-up can
+// never steal an in-flight turn's completion signal and drop the journal,
+// and a new session's query never overlaps the previous one's wrap-up on the
+// same git branch.
+let chain = Promise.resolve();
+function enqueue(job) {
+  const run = chain.then(job);
+  chain = run.catch(() => { /* keep the queue alive after a failed job */ });
+  return run;
+}
+
+// Retire a session: journal it (if it saw real conversation) then close the
+// feed. The wrap-up is enqueued so it runs AFTER any in-flight ask on that
+// session; the HTTP caller does not await it.
 function retire(s, why) {
   if (!s || s.retired) return;
   s.retired = true;
   if (session === s) session = null;
-  const wantsJournal = s.userTurns >= 2;
-  (async () => {
-    try {
-      if (wantsJournal) {
-        const before = completedTurns(s.q.messages());
-        push(s, WRAPUP_PROMPT);
-        push(s, null);
-        const deadline = Date.now() + 90_000;
-        while (completedTurns(s.q.messages()) <= before && Date.now() < deadline) {
-          await new Promise((r) => setTimeout(r, 500));
-        }
-        console.log(`[whyAI] session retired (${why}): wrap-up ${completedTurns(s.q.messages()) > before ? "completed" : "timed out"} after ${s.userTurns} kid turns`);
-      } else {
-        push(s, null);
-        console.log(`[whyAI] session retired (${why}): too short for a journal entry (${s.userTurns} turns)`);
-      }
-    } catch (err) {
-      console.error(`[whyAI] retire error: ${err?.message || err}`);
-    } finally {
-      try { s.q.abort?.(); } catch { /* already gone */ }
-    }
-  })();
+  enqueue(() => retireNow(s, why));
   // Defensive: wipe any per-branch chat history gitagent persisted, so no
   // cross-session context can leak outside the journal.
   try {
@@ -121,13 +117,31 @@ function retire(s, why) {
   } catch { /* best effort */ }
 }
 
-// Serialize asks: overlapping requests (double-send, two tabs) process in
-// order against the single session instead of cross-delivering replies.
-let chain = Promise.resolve();
+async function retireNow(s, why) {
+  try {
+    if (s.userTurns >= 2) {
+      const before = completedTurns(s.q.messages());
+      push(s, WRAPUP_PROMPT);
+      push(s, null);
+      const deadline = Date.now() + 90_000;
+      while (completedTurns(s.q.messages()) <= before && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 500));
+      }
+      const done = completedTurns(s.q.messages()) > before;
+      console.log(`[whyAI] session retired (${why}): wrap-up ${done ? "completed - journal written" : "TIMED OUT - journal NOT written"} after ${s.userTurns} kid turns`);
+    } else {
+      push(s, null);
+      console.log(`[whyAI] session retired (${why}): too short for a journal entry (${s.userTurns} turns)`);
+    }
+  } catch (err) {
+    console.error(`[whyAI] retire error: ${err?.message || err}`);
+  } finally {
+    try { s.q.abort?.(); } catch { /* already gone */ }
+  }
+}
+
 function ask(text) {
-  const run = chain.then(() => askNow(text));
-  chain = run.catch(() => { /* keep the chain alive after failures */ });
-  return run;
+  return enqueue(() => askNow(text));
 }
 
 async function askNow(text) {
