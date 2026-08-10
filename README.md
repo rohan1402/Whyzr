@@ -86,6 +86,33 @@ node ui/server.mjs
 # open http://localhost:3456 in Chrome, press the mic button, talk
 ```
 
+## Two doors: try it, or own it
+
+Whyzr runs two ways, and the difference is the point.
+
+**Own it.** Clone this repo and everything above runs in your house: your
+key, your journal, your rules file, your git history. Nothing leaves the
+machine except the model call. This is the product.
+
+**Try it.** The same code also runs as a hosted app (`npm start`) so a
+family can open a link and start in ten seconds. Each child gets their own
+full git clone of this repo on the server, with their age selecting the
+persona branch. That clone has **no git remotes** and no code path in the
+app runs `git push`, so nothing a parent does in the hosted app can ever
+reach this repository. The parent dashboard displays that fact, and an
+eval asserts it.
+
+```bash
+npm start          # hosted app; needs WHYZR_CODE (see .env.example)
+npm run review     # read sessions, journals and parent edits from a terminal
+```
+
+The hosted app adds: a typed access code bound to a device token, a parent
+PIN with lockout, per-session and per-day caps, a global daily budget that
+flips a kid-safe nap mode, and a session lifecycle that guarantees the
+growth journal is written when a session ends, whether by goodbye, closed
+tab, turn cap or time cap.
+
 Switch the tutor's age:
 
 ```bash
@@ -155,7 +182,7 @@ Two layers, one command each.
 Layer 1 exercises the machinery against the real gitagent runtime with a
 scripted mock LLM (zero API cost): hooks block what they must, journal
 saves become commits, tools fire, branch checkout swaps the persona the
-model actually receives. 28 of 28 checks pass, including regression
+model actually receives. 34 of 34 checks pass, including regression
 tests from two independent security audits of this repo: allowlist
 command chaining, case-insensitive filesystem reads, guard fail-closed
 fuzzing on malformed hook input, direct guard verdicts for every
