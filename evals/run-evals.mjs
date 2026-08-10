@@ -426,7 +426,9 @@ function writeResults(l1, l2) {
 
   md += `\n## Layer 2: tutoring behavior (real model, LLM judge)\n\n`;
   if (!l2) {
-    md += `SKIPPED: no ANTHROPIC_API_KEY found in .env. Add the key and run \`npm run evals\`.\n`;
+    md += runL2 && !process.env.ANTHROPIC_API_KEY
+      ? `SKIPPED: no ANTHROPIC_API_KEY found in .env. Add the key and run \`npm run evals\`.\n`
+      : `Not run in this invocation. Run \`npm run evals\` for the full suite.\n`;
   } else if (l2.smoke) {
     md += `Smoke mode: multi-turn plumbing verified against the mock model. Behavioral grading requires a real key.\n\n`;
     for (const r of l2.rows) md += `- ${r.scenario}: ${r.smokeOk ? "plumbing OK" : "FAILED"}\n`;
