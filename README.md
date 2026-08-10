@@ -26,7 +26,13 @@ so the only way through a question is thinking.
   figured out and how, and commits it. `git log` becomes a months-long
   record of a child's reasoning development.
 - Age modes are git branches. `git checkout age-5` swaps the persona.
-- Child safety is enforced in code (a pre_tool_use hook), not in prompts.
+- Tool-level child safety is enforced in code (a pre_tool_use hook),
+  not in prompts. Conversational safety (off-limits topics, tone) is
+  constitution-enforced and eval-verified; the hook cannot read minds,
+  so that layer is honest about being prompt-plus-proof.
+- Sessions land softly: the interface enforces a session length cap
+  (default 20 minutes) and guarantees the growth journal gets written
+  when a session ends, whether by goodbye, closed tab, or the cap.
 - A two-layer eval suite proves all of the above, cheaply and repeatably.
 
 ## Built on gitagent, not next to it
@@ -243,8 +249,11 @@ behavior.
 - Browser speech recognition sends mic audio to the browser vendor's
   speech service. A fully local voice path (or type-plus-listen mode) is
   the planned next step for privacy-sensitive families.
-- The kid UI is single-session, localhost only, one child at a time.
-  It is a demo surface, not a hosted product.
+- The kid UI is single-session, localhost only, one child at a time
+  (overlapping requests are serialized, not parallelized). It is a demo
+  surface, not a hosted product.
+- The journal-on-session-end guarantee depends on the model completing
+  the wrap-up within 90 seconds; the interface logs whether it did.
 - English only for now.
 - Tested on gitagent 2.0.2; workarounds for its rough edges are
   documented in FEEDBACK.md and may become unnecessary upstream.

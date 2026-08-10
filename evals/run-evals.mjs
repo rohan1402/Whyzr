@@ -54,6 +54,12 @@ function startMock() {
     mock.stdout.on("data", (d) => {
       for (const line of d.toString().split("\n")) if (line.trim()) mockLines.push(line);
     });
+    mock.stderr.on("data", (d) => {
+      for (const line of d.toString().split("\n")) if (line.trim()) {
+        mockLines.push("[mock:stderr] " + line);
+        console.error("[mock:stderr]", line);
+      }
+    });
     mock.on("error", reject);
     const t = setInterval(() => {
       if (mockLines.some((l) => l.includes("listening"))) { clearInterval(t); resolve(); }

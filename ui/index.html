@@ -157,6 +157,10 @@
       const reply = data.reply || data.error || "Oops, something tangled up.";
       bubble("tutor", reply);
       speak(reply);
+      if (data.sessionEnded) {
+        // The server capped the session and is journaling in the background.
+        // Next message starts a fresh adventure automatically.
+      }
     } catch (e) {
       dots.remove();
       bubble("tutor", "Oops, I lost my train of thought. Try again?");
@@ -210,7 +214,11 @@
     speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
   }
   // Every page open is a fresh adventure: long-term memory lives in the
-  // growth journal, never in a leftover chat session.
+  // growth journal, never in a leftover chat session. Closing the tab says
+  // goodbye so the old session writes its journal entry.
+  window.addEventListener("pagehide", () => {
+    try { navigator.sendBeacon("/api/bye"); } catch (e) { /* best effort */ }
+  });
   fetch("/api/new", { method: "POST" }).finally(hello);
 </script>
 </body>
