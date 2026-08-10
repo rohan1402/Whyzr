@@ -206,12 +206,13 @@ const server = http.createServer(async (req, res) => {
     }
     if (req.url === "/api/say") {
       const { text } = await body(req);
-      if (!text || typeof text !== "string" || text.length > 2000) {
+      const trimmed = typeof text === "string" ? text.trim() : "";
+      if (!trimmed || trimmed.length > 2000) {
         res.writeHead(400, { "content-type": "application/json" });
         return res.end(JSON.stringify({ error: "bad text" }));
       }
       try {
-        const out = await ask(text.trim());
+        const out = await ask(trimmed);
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify(out));
       } catch (err) {

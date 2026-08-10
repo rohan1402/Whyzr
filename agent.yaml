@@ -11,6 +11,9 @@ model:
   preferred: "anthropic:claude-sonnet-4-5-20250929"
   fallback:
     - "anthropic:claude-haiku-4-5-20251001"
-tools: [cli, read, write, edit, memory, task_tracker, skill_learner]
+# No cli: the tutor never needs a shell, and the guard hook denies it
+# unconditionally anyway (defense in depth: do not advertise what is
+# always refused; the hook remains the backstop).
+tools: [read, write, edit, memory, task_tracker, skill_learner]
 runtime:
   max_turns: 50
