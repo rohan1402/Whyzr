@@ -263,6 +263,11 @@ async function handle(req, res, url) {
       history: journal.repoHistory(dir),
       report: journal.progressReport(dir),
       remotes: git(dir, ["remote"]).split("\n").filter(Boolean),
+      // True while a just-finished session is still being written up. The
+      // dashboard shows a live notice and refreshes instead of silently
+      // displaying a stale journal.
+      journaling: sessions.isJournaling(kidId),
+      chatting: Boolean(sessions.getSession(kidId)),
     });
   }
 

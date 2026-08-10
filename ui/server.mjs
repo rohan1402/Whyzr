@@ -66,7 +66,15 @@ function ensureSession() {
       }
     }
   }
-  s.q = query({ prompt: feed(), dir: ROOT, maxTurns: 400 });
+  // The model does not know what day it is and will invent dates in journal
+  // headings if not told. Date only, never a timestamp (a per-request value
+  // would break prompt caching).
+  const now = new Date();
+  const dateSuffix =
+    `\n\n## Today\n\nToday's date is ${now.toISOString().slice(0, 10)} ` +
+    `(${now.toLocaleDateString("en-US", { weekday: "long" })}). Use this exact ` +
+    `date when you write a journal entry heading. Never guess a date.`;
+  s.q = query({ prompt: feed(), dir: ROOT, maxTurns: 400, systemPromptSuffix: dateSuffix });
   (async () => {
     try {
       for await (const _ of s.q) { /* drain; channel closes after turn one */ }

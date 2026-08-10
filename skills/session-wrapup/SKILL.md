@@ -27,7 +27,9 @@ the parent will read it tonight, because they will.
 
 ## The journal entry (via memory tool)
 
-Append to memory/MEMORY.md a dated entry with this exact shape:
+Append to memory/MEMORY.md a dated entry with this exact shape. The date is
+given to you in the "Today" section of your context: use it exactly. Never
+invent or estimate a date, and never copy the date from the example below.
 
 ```markdown
 ## 2026-08-08: Where does puddle water go?

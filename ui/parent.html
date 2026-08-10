@@ -86,6 +86,11 @@
       <button data-tab="history">History</button>
     </nav>
 
+    <div id="writing" class="banner hidden">
+      <b>Writing up the session that just finished.</b>
+      This takes up to a minute. The new entry will appear here on its own.
+    </div>
+
     <section id="tab-journal"></section>
 
     <section id="tab-report" class="hidden">
@@ -162,8 +167,14 @@
     });
   });
 
+  let pollTimer = null;
   async function load() {
     DATA = await api("/api/parent/data");
+    // A session that just ended is still being written up in the background.
+    // Say so, and refresh when it lands, rather than showing a stale journal.
+    $("writing").classList.toggle("hidden", !DATA.journaling);
+    clearTimeout(pollTimer);
+    if (DATA.journaling) pollTimer = setTimeout(load, 4000);
     $("sub").textContent = `${DATA.nickname}, age ${DATA.age}. The journal records thinking, not surveillance.`;
     renderJournal(DATA.cards);
     $("report").textContent = DATA.report || "";

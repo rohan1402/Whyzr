@@ -19,7 +19,25 @@ import { newSessionId } from "./auth.mjs";
 
 const WRAPUP_PROMPT =
   "We are done for today. Please do your session wrap-up now: write the " +
-  "growth journal entry for this session and save it with the memory tool.";
+  "growth journal entry for this session and save it with the memory tool. " +
+  `Date the entry ${todayISO()}.`;
+
+/**
+ * The model has no idea what day it is, so left alone it invents dates in
+ * journal headings (observed: a session held in Aug 2026 headed 2025-01-23).
+ * Every session gets today's date in its system prompt. Date only, never a
+ * timestamp: a per-request value would break gitagent's prompt caching.
+ */
+function todayISO() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function dateSuffix() {
+  const now = new Date();
+  const weekday = now.toLocaleDateString("en-US", { weekday: "long" });
+  return `\n\n## Today\n\nToday's date is ${todayISO()} (${weekday}). Use this ` +
+    `exact date when you write a journal entry heading. Never guess a date.`;
+}
 
 const { query } = await import("@open-gitagent/gitagent");
 
@@ -27,6 +45,15 @@ const { query } = await import("@open-gitagent/gitagent");
 const sessions = new Map();
 /** kidId -> promise chain (serializes ask + retire for that kid) */
 const chains = new Map();
+/**
+ * Kids whose session is being written to the journal right now. Wrap-up runs
+ * in the background and can take up to 90s, so a parent who opens the
+ * dashboard immediately would otherwise see a stale journal with no
+ * explanation. The dashboard reads this and says so.
+ */
+const journaling = new Set();
+
+export const isJournaling = (kidId) => journaling.has(kidId);
 
 const completedTurns = (msgs) =>
   msgs.filter((m) => m.type === "assistant" && ["stop", "error", "aborted"].includes(m.stopReason)).length;
@@ -65,7 +92,7 @@ function create(kidId) {
       }
     }
   }
-  s.q = query({ prompt: feed(), dir, maxTurns: 400 });
+  s.q = query({ prompt: feed(), dir, maxTurns: 400, systemPromptSuffix: dateSuffix() });
   (async () => {
     try {
       for await (const _ of s.q) { /* drain; channel closes after turn one */ }
@@ -158,6 +185,7 @@ export function retire(kidId, why) {
   if (!s || s.retired) return;
   s.retired = true;
   sessions.delete(kidId);
+  if (s.userTurns >= 2) journaling.add(kidId);
   enqueue(kidId, () => retireNow(s, why));
 }
 
@@ -184,6 +212,7 @@ async function retireNow(s, why) {
   } catch (err) {
     console.error(`[whyzr] retire error: ${err?.message || err}`);
   } finally {
+    journaling.delete(s.kidId);
     try { s.q.abort?.(); } catch { /* already gone */ }
     if (config.saveTranscripts && s.transcript.length) {
       try {
