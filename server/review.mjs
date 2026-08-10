@@ -66,8 +66,14 @@ async function overview() {
     console.log(`\n${bold(kid.nickname)} ${dim(`age ${kid.age}, branch ${kid.branch}, id ${kid.id}`)}`);
     const u = kid.usage || {};
     console.log(`  today: ${u.sessions || 0} sessions, ${u.tokens || 0} tokens, $${(u.spendUsd || 0).toFixed(3)}`);
-    const journalCommits = (kid.history || []).filter((h) => /^journal:|journal|Session/i.test(h.subject));
-    const parentEdits = (kid.history || []).filter((h) => /parent/i.test(h.subject));
+    // Count by what a commit DID, not by loose word matching on its message:
+    // journal entries are commits that add a session heading, parent actions
+    // are the two messages this app writes itself.
+    const journalCommits = REMOTE
+      ? (kid.history || []).filter((h) => /^journal:/i.test(h.subject))
+      : journal.journalCards(paths.kidRepo(kid.id));
+    const parentEdits = (kid.history || []).filter((h) =>
+      /^(Edited by parent|Restore original)/.test(h.subject));
     console.log(`  journal entries: ${journalCommits.length}   parent edits: ${bold(String(parentEdits.length))}`);
     for (const e of parentEdits) console.log(dim(`    ${e.hash}  ${e.date}  ${e.subject}`));
   }

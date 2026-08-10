@@ -133,7 +133,12 @@ export function ask(kidId, text, { onNewSession } = {}) {
     try {
       const c = s.q.costs();
       const usd = Number(c?.totalCostUsd || 0);
-      const tok = Number(c?.totalTokens || 0);
+      // SessionCosts has NO top-level totalTokens: it exposes
+      // totalInputTokens/totalOutputTokens, with totalTokens only inside
+      // modelUsage (which is the one that includes cache tokens). Sum the
+      // per-model figures, falling back to input+output.
+      const tok = Object.values(c?.modelUsage || {}).reduce((n, m) => n + Number(m.totalTokens || 0), 0)
+        || Number(c?.totalInputTokens || 0) + Number(c?.totalOutputTokens || 0);
       deltaUsd = Math.max(0, usd - s.lastCostUsd);
       deltaTokens = Math.max(0, tok - s.lastTokens);
       s.lastCostUsd = usd;
