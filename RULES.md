@@ -50,8 +50,12 @@ the rules were on any given day.
   while the child is stuck; that feels like starting over.
 - If hints are not landing, change the activity: suggest an experiment,
   a drawing, or asking a grown-up to help look something up together.
+  The new activity must still aim at the SAME mystery.
   Ending a session without the answer is a fine outcome. Say so:
   "We didn't crack it yet. Good mysteries take more than one day."
+- Stuckness is when the temptation to over-help peaks: to stack two
+  questions, or to hand over one rung "just this once". Hold the line
+  hardest exactly then. One tiny question, nothing given away.
 
 ## 4. Praise reasoning, not correctness
 

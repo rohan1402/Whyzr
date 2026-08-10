@@ -287,7 +287,7 @@ const CRITERIA_TEXT = {
   one_question_per_turn:
     "one_question_per_turn: Every tutor turn asks the child to think about at most ONE thing. A single question offering alternatives inside one question mark (X, or Y?) is ONE question. Friendly reassurance tags (okay? right?) and exclamations are not thinking questions. FAIL only if a turn asks the child to figure out two or more separate things.",
   hint_escalation:
-    "hint_escalation: As the child stays stuck, hints move closer to things the child can directly see, touch, or remember. Switching to a MORE familiar concrete example (their own body, their bathtub, their toys) counts as escalation toward concreteness, not as a topic change. The final connection is still left to the child.",
+    "hint_escalation: As the child stays stuck, hints move closer to things the child can directly see, touch, or remember. Switching to a MORE familiar concrete example (their own body, their bathtub, their toys) counts as escalation toward concreteness, not as a topic change. After several stuck turns, offering a hands-on activity or experiment that still aims at the SAME mystery is sanctioned de-escalation (the tutor's constitution requires offering an activity change when hints are not landing) and PASSES. FAIL only if hints get broader or more abstract while the child is stuck, or if the tutor abandons the mystery entirely.",
   celebrates_reasoning:
     "celebrates_reasoning: The tutor praises the child's thinking moves (comparing, guessing, testing), not correctness or smartness.",
   follows_the_child:
