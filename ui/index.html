@@ -162,7 +162,7 @@
 <script>
   const $ = (id) => document.getElementById(id);
   const chat = $("chat"), mic = $("mic"), typed = $("typed");
-  let busy = false, sessionOver = false;
+  let busy = false, sessionOver = false, epoch = 0;
 
   const show = (...ids) => {
     ["gate", "setup", "chat", "dock", "miclabel", "newchat", "parentLink"]
@@ -188,6 +188,20 @@
     return b;
   }
 
+  // iOS Safari refuses speechSynthesis unless it has been started once from a
+  // real user gesture. Without this the read-aloud fallback, which is the
+  // whole plan when speech recognition is missing, is silent on iPhones.
+  let speechUnlocked = false;
+  function unlockSpeech() {
+    if (speechUnlocked) return;
+    try {
+      speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+      speechUnlocked = true;
+    } catch (e) { /* nothing to unlock */ }
+  }
+  document.addEventListener("pointerdown", unlockSpeech, { once: true });
+  document.addEventListener("keydown", unlockSpeech, { once: true });
+
   function speak(text) {
     try {
       speechSynthesis.cancel();
@@ -204,10 +218,12 @@
   async function send(text) {
     if (busy || sessionOver || !text.trim()) return;
     busy = true;
+    const mine = epoch;
     bubble("kid", text);
     const dots = bubble("thinking", "● ● ●");
     try {
       const { data } = await post("/api/say", { text });
+      if (mine !== epoch) return; // a new adventure started while we waited
       dots.remove();
       const reply = data.reply || data.error || "Oops, something tangled up.";
       bubble("tutor", reply);
@@ -223,8 +239,14 @@
     busy = false;
   }
 
+  // Clear the box only once the message is actually accepted: clearing first
+  // silently destroyed anything typed while Whyzr was still thinking.
   typed.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") { const t = typed.value; typed.value = ""; send(t); }
+    if (e.key !== "Enter") return;
+    if (busy || sessionOver || !typed.value.trim()) return;
+    const t = typed.value;
+    typed.value = "";
+    send(t);
   });
 
   // Voice in. Some browsers (notably iOS Safari) have no usable speech
@@ -235,8 +257,18 @@
     rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
     rec.onresult = (e) => { mic.classList.remove("listening"); send(e.results[0][0].transcript); };
     rec.onend = () => mic.classList.remove("listening");
-    rec.onerror = () => mic.classList.remove("listening");
+    rec.onerror = (e) => {
+      mic.classList.remove("listening");
+      // A denied mic used to leave a dead button and no explanation.
+      if (["not-allowed", "service-not-allowed", "audio-capture"].includes(e.error)) {
+        mic.classList.add("hidden");
+        $("miclabel").textContent = "type your question, I will read my answer out loud";
+        typed.style.maxWidth = "none";
+        bubble("tutor", "I could not hear you, but you can type to me down there and I will read my answers out loud!");
+      }
+    };
     mic.addEventListener("click", () => {
+      unlockSpeech();
       if (mic.classList.contains("listening")) { rec.stop(); return; }
       speechSynthesis.cancel();
       mic.classList.add("listening");
@@ -249,6 +281,10 @@
   }
 
   $("newchat").addEventListener("click", async () => {
+    // Ignore a reply that lands after the reset, so an old answer cannot
+    // appear in the fresh conversation.
+    epoch += 1;
+    busy = false;
     await post("/api/new");
     chat.innerHTML = ""; sessionOver = false;
     $("miclabel").textContent = SR ? "press the button and talk" : "type your question, I will read my answer out loud";
@@ -291,7 +327,16 @@
   });
 
   async function boot() {
-    const me = await fetch("/api/me").then((r) => r.json()).catch(() => ({}));
+    let me;
+    try {
+      const r = await fetch("/api/me");
+      me = await r.json();
+    } catch (e) {
+      // A dropped connection used to leave a child staring at a blank page.
+      show("chat", "dock", "miclabel");
+      bubble("tutor", "I could not wake up just now. Check the internet and refresh the page to try again.");
+      return;
+    }
     if (!me.authed) return show("gate");
     if (!me.setUp) return show("setup");
     if (me.napping) {

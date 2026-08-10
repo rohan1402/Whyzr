@@ -31,7 +31,7 @@ import * as auth from "./auth.mjs";
 import * as caps from "./caps.mjs";
 import * as sessions from "./sessions.mjs";
 import * as journal from "./journal.mjs";
-import { provisionKidRepo, snapAge, changeAgeBranch, assertNoRemotes, git } from "./repos.mjs";
+import { provisionKidRepo, snapAge, changeAgeBranch, git, deleteKidRepo } from "./repos.mjs";
 import { listTranscripts, readTranscript } from "./transcripts.mjs";
 
 ensureDataDirs();
@@ -79,16 +79,26 @@ const html = (res, body) => {
 
 function body(req) {
   return new Promise((resolve) => {
-    let data = "";
+    // Collect Buffers and decode once at the end: concatenating chunks as
+    // strings corrupts any multi-byte character split across a chunk
+    // boundary (a real risk for names and kid questions in any language).
+    const chunks = [];
     let size = 0;
     req.on("data", (c) => {
       size += c.length;
       if (size > 200_000) { req.destroy(); resolve({}); return; }
-      data += c;
+      chunks.push(c);
     });
     req.on("error", () => resolve({}));
     req.on("aborted", () => resolve({}));
-    req.on("end", () => { try { resolve(JSON.parse(data)); } catch { resolve({}); } });
+    req.on("end", () => {
+      try {
+        const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+        // JSON.parse succeeds on null, numbers, strings and arrays; every
+        // caller destructures, so normalise to an object.
+        resolve(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
+      } catch { resolve({}); }
+    });
   });
 }
 
@@ -216,6 +226,12 @@ async function handle(req, res, url) {
     if (!nickname || String(nickname).trim().length < 1) return json(res, 400, { error: "Pick a nickname." });
     if (!parentConfirmed) return json(res, 400, { error: "A grown-up needs to confirm this setup." });
     if (!pin || !/^\d{4,8}$/.test(String(pin))) return json(res, 400, { error: "Choose a 4 to 8 digit parent PIN." });
+    // Without this a blank age became 0, silently putting a child on the
+    // youngest persona with no confirmation shown.
+    const ageNum = Number(age);
+    if (!Number.isFinite(ageNum) || ageNum < 1 || ageNum > 18) {
+      return json(res, 400, { error: "How old are you? Pick a number between 1 and 18." });
+    }
 
     const snap = snapAge(age);
 
@@ -233,10 +249,21 @@ async function handle(req, res, url) {
       return json(res, 200, { ok: true, nickname: kid.nickname, age: snap.age, note: snap.note });
     }
 
+    // Provision the repo BEFORE trusting the registry entry: registering
+    // first and cloning second meant a clone failure left a kid with no repo,
+    // permanently bricking the app while every retry minted another orphan.
     const kidId = await registry.createKid({
       nickname, age: snap.age, branch: snap.branch, pinHash: auth.hashPin(pin),
     });
-    provisionKidRepo(kidId, snap.branch);
+    try {
+      provisionKidRepo(kidId, snap.branch);
+    } catch (err) {
+      console.error(`[whyzr] provisioning failed for ${kidId}: ${err.message}`);
+      await registry.update((reg) => { delete reg.kids[kidId]; });
+      try { deleteKidRepo(kidId); } catch { /* nothing to clean */ }
+      addPending(token); // let the tester try again with the same token
+      return json(res, 500, { error: "Could not get things ready. Please try again." });
+    }
     const bind = token || auth.issueToken();
     await auth.bindToken(kidId, bind);
     return json(res, 200, { ok: true, nickname: String(nickname).trim(), age: snap.age, note: snap.note },
@@ -323,7 +350,10 @@ async function handle(req, res, url) {
       rules: journal.readRules(dir),
       history: journal.repoHistory(dir),
       report: journal.progressReport(dir),
-      remotes: git(dir, ["remote"]).split("\n").filter(Boolean),
+      // null means "we could not check", which the dashboard must NOT render
+      // as a safety guarantee. An unguarded call here also 500'd the whole
+      // dashboard whenever the repo was mid-operation.
+      remotes: safeRemotes(dir),
       // True while a just-finished session is still being written up. The
       // dashboard shows a live notice and refreshes instead of silently
       // displaying a stale journal.
@@ -343,11 +373,17 @@ async function handle(req, res, url) {
     const kidId = parentKid(req, url);
     if (!kidId) return json(res, 401, { error: "unauthorized" });
     const { rules } = await body(req);
+    // Refuse to commit an empty rules file: a failed dashboard load used to
+    // blank the textarea, and the next Save wiped the constitution.
+    if (typeof rules !== "string" || rules.trim().length < 200) {
+      return json(res, 400, { error: "That does not look like a complete rules file. Reload and try again." });
+    }
     try {
       const hash = journal.saveRules(paths.kidRepo(kidId), rules);
       return json(res, 200, { ok: true, hash });
     } catch (err) {
-      return json(res, 400, { error: err.message });
+      console.error(`[whyzr] saveRules failed: ${err.stack || err}`);
+      return json(res, 500, { error: "Could not save those rules. Nothing was changed." });
     }
   }
 
@@ -358,7 +394,8 @@ async function handle(req, res, url) {
       const hash = journal.restoreRules(paths.kidRepo(kidId));
       return json(res, 200, { ok: true, hash, rules: journal.readRules(paths.kidRepo(kidId)) });
     } catch (err) {
-      return json(res, 400, { error: err.message });
+      console.error(`[whyzr] restoreRules failed: ${err.stack || err}`);
+      return json(res, 500, { error: "Could not restore the rules. Nothing was changed." });
     }
   }
 
@@ -394,6 +431,10 @@ async function handle(req, res, url) {
   res.end("not found");
 }
 
+function safeRemotes(dir) {
+  try { return git(dir, ["remote"]).split("\n").filter(Boolean); } catch { return null; }
+}
+
 function requireKid(req, res) {
   const kidId = auth.kidFromRequest(req);
   if (!kidId) { json(res, 401, { error: "Enter the code first." }); return null; }
@@ -414,11 +455,19 @@ const server = http.createServer(async (req, res) => {
 
 const shutdown = async (sig) => {
   console.log(`[whyzr] ${sig}: retiring live sessions so journals are written...`);
-  try { await Promise.race([sessions.retireAll(sig), new Promise((r) => setTimeout(r, 30_000))]); } catch { /* best effort */ }
+  // Must outlast a wrap-up, or every deploy kills the journal entry of any
+  // session in flight. Derived from the wrap-up deadline, never a guess.
+  const grace = sessions.WRAPUP_TIMEOUT_MS + 15_000;
+  try {
+    await Promise.race([sessions.retireAll(sig), new Promise((r) => setTimeout(r, grace))]);
+  } catch { /* best effort */ }
   process.exit(0);
 };
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT", () => shutdown("SIGINT"));
+
+// Sessions report spend through the caps module without importing it.
+sessions.setSpendReporter((kidId, usd, tokens) => caps.addSpend(kidId, usd, tokens));
 
 server.listen(config.port, () => {
   console.log(`Whyzr hosted app on :${config.port}`);

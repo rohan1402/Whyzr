@@ -27,7 +27,9 @@
     width: 100%; padding: 12px 14px; font-size: 16px; font-family: inherit;
     border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink);
   }
-  textarea { min-height: 340px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; line-height: 1.55; resize: vertical; }
+  /* 16px, not 13px: anything smaller makes iOS Safari zoom on focus and
+     never zoom back, which strands a parent mid-edit on a phone. */
+  textarea { min-height: 340px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 16px; line-height: 1.5; resize: vertical; }
   input:focus, textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
   button {
     font-family: inherit; font-size: .95rem; font-weight: 600; cursor: pointer;
@@ -168,21 +170,49 @@
   });
 
   let pollTimer = null;
-  async function load() {
-    DATA = await api("/api/parent/data");
+  let rulesDirty = false;
+  $("rules").addEventListener("input", () => { rulesDirty = true; });
+
+  async function load({ refresh = false } = {}) {
+    let data;
+    try {
+      data = await api("/api/parent/data");
+      if (!data || data.error) throw new Error(data && data.error);
+    } catch (e) {
+      // Never blank the editor on a failed load: the next Save would have
+      // committed an empty rules file over the real constitution.
+      $("pinErr").textContent = "";
+      flash("Could not load the latest data. Nothing was changed.");
+      clearTimeout(pollTimer);
+      return;
+    }
+    DATA = data;
+
     // A session that just ended is still being written up in the background.
     // Say so, and refresh when it lands, rather than showing a stale journal.
     $("writing").classList.toggle("hidden", !DATA.journaling);
     clearTimeout(pollTimer);
-    if (DATA.journaling) pollTimer = setTimeout(load, 4000);
+    if (DATA.journaling) pollTimer = setTimeout(() => load({ refresh: true }), 4000);
+
     $("sub").textContent = `${DATA.nickname}, age ${DATA.age}. The journal records thinking, not surveillance.`;
     renderJournal(DATA.cards);
     $("report").textContent = DATA.report || "";
-    $("rules").value = DATA.rules || "";
-    $("remoteProof").textContent = DATA.remotes && DATA.remotes.length
-      ? `Warning: this copy has remotes (${DATA.remotes.join(", ")})`
-      : "Verified: this copy has no git remotes, so nothing here can be pushed anywhere.";
     renderHistory(DATA.history);
+
+    // Only overwrite the editor when the parent has not started typing:
+    // the background poll used to wipe an in-progress edit every 4 seconds.
+    if (!(refresh && rulesDirty)) {
+      $("rules").value = DATA.rules || "";
+      if (!refresh) rulesDirty = false;
+    }
+
+    // Only claim the safety property when it was actually checked. null means
+    // the check could not run, which must never render as a guarantee.
+    $("remoteProof").textContent = !Array.isArray(DATA.remotes)
+      ? "Could not verify the remote list right now."
+      : DATA.remotes.length
+        ? `Warning: this copy has remotes (${DATA.remotes.join(", ")})`
+        : "Verified: this copy has no git remotes, so nothing here can be pushed anywhere.";
   }
 
   function renderJournal(cards) {
@@ -228,8 +258,9 @@
       body: JSON.stringify({ rules: $("rules").value }),
     });
     if (r.error) { $("rulesMsg").textContent = r.error; return; }
+    rulesDirty = false;
     $("rulesMsg").innerHTML = r.hash
-      ? `<span class="good">Saved as commit ${r.hash}.</span> Whyzr's next answer follows the new rules.`
+      ? `<span class="good">Saved as commit ${esc(r.hash)}.</span> Whyzr's next answer follows the new rules.`
       : "No changes to save.";
     flash("Rules committed to your child's copy");
     load();
@@ -240,7 +271,8 @@
     const r = await api("/api/parent/restore", { method: "POST" });
     if (r.error) { $("rulesMsg").textContent = r.error; return; }
     $("rules").value = r.rules || "";
-    $("rulesMsg").innerHTML = `<span class="good">Original rules restored${r.hash ? ` as commit ${r.hash}` : ""}.</span>`;
+    rulesDirty = false;
+    $("rulesMsg").innerHTML = `<span class="good">Original rules restored${r.hash ? ` as commit ${esc(r.hash)}` : ""}.</span>`;
     flash("Original rules restored");
     load();
   });

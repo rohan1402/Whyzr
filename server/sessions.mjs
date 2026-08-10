@@ -41,6 +41,32 @@ function dateSuffix() {
 
 const { query } = await import("@open-gitagent/gitagent");
 
+/** How long a wrap-up may take. Shutdown must wait at least this long. */
+export const WRAPUP_TIMEOUT_MS = 90_000;
+
+/**
+ * Spend reporter, wired by the app so sessions.mjs stays free of the caps
+ * module. Called with (kidId, deltaUsd, deltaTokens).
+ */
+let onSpend = null;
+export function setSpendReporter(fn) { onSpend = fn; }
+
+/** Cost since the last time we measured this session (costs() is cumulative). */
+function spendDelta(s) {
+  try {
+    const c = s.q.costs();
+    const usd = Number(c?.totalCostUsd || 0);
+    const tok = Object.values(c?.modelUsage || {}).reduce((n, m) => n + Number(m.totalTokens || 0), 0)
+      || Number(c?.totalInputTokens || 0) + Number(c?.totalOutputTokens || 0);
+    const delta = { usd: Math.max(0, usd - s.lastCostUsd), tokens: Math.max(0, tok - s.lastTokens) };
+    s.lastCostUsd = usd;
+    s.lastTokens = tok;
+    return delta;
+  } catch {
+    return { usd: 0, tokens: 0 };
+  }
+}
+
 /** kidId -> session */
 const sessions = new Map();
 /** kidId -> promise chain (serializes ask + retire for that kid) */
@@ -93,6 +119,11 @@ function create(kidId) {
     }
   }
   s.q = query({ prompt: feed(), dir, maxTurns: 400, systemPromptSuffix: dateSuffix() });
+  // Drive the session-length cap from a timer, not from the next message: a
+  // child who simply closes the tab used to leave a session open forever,
+  // never capped and never journaled.
+  s.capTimer = setTimeout(() => retire(kidId, "time cap"), config.sessionMaxMs);
+  s.capTimer.unref?.();
   (async () => {
     try {
       for await (const _ of s.q) { /* drain; channel closes after turn one */ }
@@ -154,24 +185,9 @@ export function ask(kidId, text, { onNewSession } = {}) {
     reply = reply || "Hmm, my thinking got tangled. Can you say that again?";
     s.transcript.push({ role: "whyzr", text: reply, at: new Date().toISOString() });
 
-    // Spend delta since the last turn (costs() is cumulative per session).
-    let deltaUsd = 0;
-    let deltaTokens = 0;
-    try {
-      const c = s.q.costs();
-      const usd = Number(c?.totalCostUsd || 0);
-      // SessionCosts has NO top-level totalTokens: it exposes
-      // totalInputTokens/totalOutputTokens, with totalTokens only inside
-      // modelUsage (which is the one that includes cache tokens). Sum the
-      // per-model figures, falling back to input+output.
-      const tok = Object.values(c?.modelUsage || {}).reduce((n, m) => n + Number(m.totalTokens || 0), 0)
-        || Number(c?.totalInputTokens || 0) + Number(c?.totalOutputTokens || 0);
-      deltaUsd = Math.max(0, usd - s.lastCostUsd);
-      deltaTokens = Math.max(0, tok - s.lastTokens);
-      s.lastCostUsd = usd;
-      s.lastTokens = tok;
-    } catch { /* cost tracking is best effort */ }
-
+    // SessionCosts has NO top-level totalTokens: totalTokens lives only
+    // inside modelUsage (and is the figure that includes cache tokens).
+    const { usd: deltaUsd, tokens: deltaTokens } = spendDelta(s);
     return { reply, deltaUsd, deltaTokens, sessionId: s.id, turns: s.userTurns };
   });
 }
@@ -195,10 +211,16 @@ async function retireNow(s, why) {
       const before = completedTurns(s.q.messages());
       push(s, WRAPUP_PROMPT);
       push(s, null);
-      const deadline = Date.now() + 90_000;
+      const deadline = Date.now() + WRAPUP_TIMEOUT_MS;
       while (completedTurns(s.q.messages()) <= before && Date.now() < deadline) {
         await new Promise((r) => setTimeout(r, 500));
       }
+      // The wrap-up is a real model turn and used to be invisible to the
+      // budget: its cost never reached the daily cap or the global total.
+      try {
+        const d = spendDelta(s);
+        if (onSpend && (d.usd || d.tokens)) await onSpend(s.kidId, d.usd, d.tokens);
+      } catch { /* metering is best effort, never blocks the journal */ }
       const done = completedTurns(s.q.messages()) > before;
       console.log(
         `[whyzr] session ${s.id} for ${s.kidId} retired (${why}): ` +
@@ -213,6 +235,7 @@ async function retireNow(s, why) {
     console.error(`[whyzr] retire error: ${err?.message || err}`);
   } finally {
     journaling.delete(s.kidId);
+    clearTimeout(s.capTimer);
     try { s.q.abort?.(); } catch { /* already gone */ }
     if (config.saveTranscripts && s.transcript.length) {
       try {

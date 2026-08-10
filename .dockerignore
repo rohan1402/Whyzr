@@ -1,0 +1,7 @@
+node_modules
+.whyzr-data
+evals/transcripts
+.env
+.env.*
+!.env.example
+.DS_Store
