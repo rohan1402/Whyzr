@@ -45,7 +45,9 @@ export const config = {
   maxTurnsPerSession: num("MAX_TURNS_PER_SESSION", 30),
   maxSessionsPerDay: num("MAX_SESSIONS_PER_DAY", 3),
   maxDailyTokensPerKid: num("MAX_DAILY_TOKENS", 400_000),
-  dailyBudgetUsd: Number(process.env.DAILY_BUDGET_USD || 5),
+  // ~$0.009 per turn measured, so a full 30-turn session is about $0.25.
+  // $1 covers 3 to 4 full sessions, which matches the 3-per-day kid cap.
+  dailyBudgetUsd: Number(process.env.DAILY_BUDGET_USD || 1),
 
   // Testing only. Off by default so the README claim stays true in prod.
   saveTranscripts: bool("SAVE_TRANSCRIPTS", false),

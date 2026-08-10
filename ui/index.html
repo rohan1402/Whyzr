@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#BDE3FF">
 <title>Whyzr</title>
 <style>
   :root {
@@ -14,88 +15,104 @@
     --kid: #D9F2D0;
     --accent: #FF8A5C;
   }
-  * { box-sizing: border-box; margin: 0; }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { overflow-x: hidden; }
   body {
     font-family: "Comic Sans MS", "Chalkboard SE", "Segoe UI", system-ui, sans-serif;
     background: linear-gradient(180deg, var(--sky) 0%, var(--cream) 30%);
+    background-attachment: fixed;
     color: var(--ink);
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
     align-items: center;
   }
-  header { text-align: center; padding: 22px 10px 6px; }
-  header h1 { font-size: 2.2rem; letter-spacing: 1px; }
+  header { text-align: center; padding: 20px 10px 4px; }
+  header h1 { font-size: clamp(1.8rem, 8vw, 2.2rem); letter-spacing: 1px; }
   header h1 .why { color: var(--accent); }
-  header p { opacity: .75; font-size: 1rem; margin-top: 2px; }
+  header p { opacity: .75; font-size: .95rem; margin-top: 2px; }
+
+  /* ---- gate + setup cards ---- */
+  .card {
+    width: min(440px, 92vw);
+    background: #fff;
+    border-radius: 22px;
+    padding: 22px 20px;
+    margin: 18px 0;
+    box-shadow: 0 4px 18px rgba(58,51,80,.12);
+  }
+  .card h2 { font-size: 1.25rem; margin-bottom: 6px; }
+  .card p.help { font-size: .92rem; opacity: .7; margin-bottom: 14px; line-height: 1.4; }
+  .card label { display: block; font-size: .9rem; margin: 12px 0 5px; opacity: .8; }
+  .card input[type=text], .card input[type=number], .card input[type=password] {
+    width: 100%; padding: 13px 15px; font-size: 1.05rem; font-family: inherit;
+    border: 2px solid rgba(58,51,80,.15); border-radius: 14px; background: #fff; color: var(--ink);
+  }
+  .card input:focus { outline: 3px solid var(--sun); border-color: transparent; }
+  .checkrow { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0 4px; font-size: .9rem; line-height: 1.35; }
+  .checkrow input { width: 22px; height: 22px; flex: none; margin-top: 1px; }
+  .btn {
+    width: 100%; margin-top: 16px; padding: 15px; font-size: 1.1rem; font-family: inherit;
+    font-weight: bold; color: var(--ink); background: var(--sun); border: none;
+    border-radius: 999px; cursor: pointer;
+  }
+  .btn:active { transform: scale(.98); }
+  .err { color: #C2410C; font-size: .9rem; margin-top: 10px; min-height: 1.1em; }
+  .note { background: #EAF7E4; border-radius: 12px; padding: 10px 13px; font-size: .92rem; margin-top: 12px; }
+
+  /* ---- chat ---- */
   #chat {
-    width: min(680px, 94vw);
-    flex: 1;
-    padding: 16px 4px 140px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+    width: min(680px, 94vw); flex: 1;
+    padding: 12px 4px 150px;
+    display: flex; flex-direction: column; gap: 12px;
   }
   .bubble {
-    max-width: 82%;
-    padding: 14px 18px;
-    border-radius: 22px;
-    font-size: 1.15rem;
-    line-height: 1.45;
-    box-shadow: 0 2px 6px rgba(58, 51, 80, .10);
-    white-space: pre-wrap;
-    animation: pop .18s ease-out;
+    max-width: 86%; padding: 14px 18px; border-radius: 22px;
+    font-size: clamp(1rem, 4.2vw, 1.15rem); line-height: 1.45;
+    box-shadow: 0 2px 6px rgba(58,51,80,.10); white-space: pre-wrap;
+    overflow-wrap: anywhere; animation: pop .18s ease-out;
   }
   @keyframes pop { from { transform: scale(.92); opacity: 0; } }
   .tutor { background: var(--tutor); border-bottom-left-radius: 6px; align-self: flex-start; }
   .kid   { background: var(--kid);   border-bottom-right-radius: 6px; align-self: flex-end; }
   .thinking { align-self: flex-start; opacity: .6; font-size: 1.4rem; letter-spacing: 4px; }
+
   #dock {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 14px;
-    padding: 14px 16px 20px;
+    position: fixed; bottom: 0; left: 0; right: 0;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    padding: 12px 14px calc(16px + env(safe-area-inset-bottom));
     background: linear-gradient(180deg, transparent, var(--cream) 35%);
   }
   #mic {
-    width: 92px; height: 92px;
-    border-radius: 50%;
-    border: none;
-    background: var(--sun);
-    font-size: 2.6rem;
-    cursor: pointer;
-    box-shadow: 0 6px 16px rgba(58, 51, 80, .25);
-    transition: transform .1s;
+    width: 78px; height: 78px; flex: none; border-radius: 50%; border: none;
+    background: var(--sun); font-size: 2.2rem; cursor: pointer;
+    box-shadow: 0 6px 16px rgba(58,51,80,.25); transition: transform .1s;
   }
   #mic:active { transform: scale(.95); }
-  #mic.listening {
-    background: var(--accent);
-    animation: pulse 1.1s infinite;
-  }
+  #mic.listening { background: var(--accent); animation: pulse 1.1s infinite; }
   @keyframes pulse {
-    0%   { box-shadow: 0 0 0 0 rgba(255, 138, 92, .55); }
-    100% { box-shadow: 0 0 0 26px rgba(255, 138, 92, 0); }
+    0%   { box-shadow: 0 0 0 0 rgba(255,138,92,.55); }
+    100% { box-shadow: 0 0 0 24px rgba(255,138,92,0); }
   }
   #typed {
-    width: min(300px, 40vw);
-    padding: 12px 16px;
-    border: 2px solid rgba(58, 51, 80, .18);
-    border-radius: 999px;
-    font-size: 1rem;
-    font-family: inherit;
-    background: #fff;
+    flex: 1; min-width: 0; max-width: 340px; padding: 14px 16px;
+    border: 2px solid rgba(58,51,80,.18); border-radius: 999px;
+    font-size: 16px; /* 16px stops iOS zooming on focus */
+    font-family: inherit; background: #fff; color: var(--ink);
   }
   #typed:focus { outline: 3px solid var(--sun); border-color: transparent; }
   #newchat {
-    position: fixed; top: 14px; right: 16px;
-    background: none; border: none;
-    font-size: .85rem; color: var(--ink); opacity: .55;
-    cursor: pointer; font-family: inherit;
+    position: fixed; top: 12px; right: 14px; background: none; border: none;
+    font-size: .85rem; color: var(--ink); opacity: .55; cursor: pointer; font-family: inherit;
+    padding: 8px;
   }
-  #miclabel { position: fixed; left: 50%; transform: translateX(-50%); bottom: 2px; font-size: .78rem; opacity: .55; }
+  #miclabel {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: calc(2px + env(safe-area-inset-bottom)); font-size: .75rem; opacity: .5;
+  }
+  .hidden { display: none !important; }
+  a.parentlink { font-size: .8rem; opacity: .5; color: var(--ink); margin: 6px 0 18px; }
 </style>
 </head>
 <body>
@@ -103,19 +120,64 @@
     <h1><span class="why">Why</span>zr</h1>
     <p>the friend who asks why back</p>
   </header>
-  <button id="newchat" title="Start a fresh adventure">new adventure</button>
-  <main id="chat"></main>
-  <div id="dock">
+
+  <!-- 1. access code -->
+  <section id="gate" class="card hidden">
+    <h2>Hello!</h2>
+    <p class="help">Type the secret word the grown-up sent you.</p>
+    <label for="code">Secret word</label>
+    <input id="code" type="password" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <button class="btn" id="codeBtn">Let me in</button>
+    <div class="err" id="codeErr"></div>
+  </section>
+
+  <!-- 2. first-run setup -->
+  <section id="setup" class="card hidden">
+    <h2>Nice to meet you!</h2>
+    <p class="help">Two quick things, then we can start wondering about stuff.</p>
+    <label for="nick">What should I call you?</label>
+    <input id="nick" type="text" maxlength="40" autocomplete="off" placeholder="a nickname is perfect">
+    <label for="age">How old are you?</label>
+    <input id="age" type="number" min="1" max="99" inputmode="numeric" placeholder="7">
+    <div class="checkrow">
+      <input id="parentOk" type="checkbox">
+      <label for="parentOk" style="margin:0">I am a parent or guardian setting this up for my child.</label>
+    </div>
+    <label for="pin">Parent PIN (4 to 8 digits, for the grown-up's page)</label>
+    <input id="pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+    <button class="btn" id="setupBtn">Start exploring</button>
+    <div class="err" id="setupErr"></div>
+  </section>
+
+  <!-- 3. chat -->
+  <button id="newchat" class="hidden" title="Start a fresh adventure">new adventure</button>
+  <main id="chat" class="hidden"></main>
+  <div id="dock" class="hidden">
     <input id="typed" placeholder="or type here..." autocomplete="off">
-    <button id="mic" title="Push to talk">&#127908;</button>
+    <button id="mic" title="Push to talk" aria-label="Push to talk">&#127908;</button>
   </div>
-  <div id="miclabel">press the button and talk</div>
+  <div id="miclabel" class="hidden">press the button and talk</div>
+  <a class="parentlink hidden" id="parentLink" href="/parent">grown-ups: see the journal</a>
 
 <script>
-  const chat = document.getElementById("chat");
-  const mic = document.getElementById("mic");
-  const typed = document.getElementById("typed");
-  let busy = false;
+  const $ = (id) => document.getElementById(id);
+  const chat = $("chat"), mic = $("mic"), typed = $("typed");
+  let busy = false, sessionOver = false;
+
+  const show = (...ids) => {
+    ["gate", "setup", "chat", "dock", "miclabel", "newchat", "parentLink"]
+      .forEach((id) => $(id).classList.add("hidden"));
+    ids.forEach((id) => $(id).classList.remove("hidden"));
+  };
+
+  async function post(path, payload) {
+    const r = await fetch(path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload || {}),
+    });
+    return { status: r.status, data: await r.json().catch(() => ({})) };
+  }
 
   function bubble(cls, text) {
     const b = document.createElement("div");
@@ -134,32 +196,25 @@
       const nice = voices.find(v => /Samantha|Google US English|Karen|Zira/i.test(v.name))
         || voices.find(v => v.lang.startsWith("en"));
       if (nice) u.voice = nice;
-      u.rate = 1.0;
-      u.pitch = 1.15;
-      document.body.dataset.lastSpoken = text.slice(0, 60);
+      u.rate = 1.0; u.pitch = 1.15;
       speechSynthesis.speak(u);
-    } catch (e) { /* no speech, text still shows */ }
+    } catch (e) { /* text still shows */ }
   }
 
   async function send(text) {
-    if (busy || !text.trim()) return;
+    if (busy || sessionOver || !text.trim()) return;
     busy = true;
     bubble("kid", text);
     const dots = bubble("thinking", "● ● ●");
     try {
-      const r = await fetch("/api/say", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-      const data = await r.json();
+      const { data } = await post("/api/say", { text });
       dots.remove();
       const reply = data.reply || data.error || "Oops, something tangled up.";
       bubble("tutor", reply);
       speak(reply);
       if (data.sessionEnded) {
-        // The server capped the session and is journaling in the background.
-        // Next message starts a fresh adventure automatically.
+        sessionOver = true;
+        $("miclabel").textContent = "press new adventure to start again";
       }
     } catch (e) {
       dots.remove();
@@ -172,54 +227,87 @@
     if (e.key === "Enter") { const t = typed.value; typed.value = ""; send(t); }
   });
 
-  // Voice in: browser speech recognition (Chrome/Safari/Edge).
+  // Voice in. Some browsers (notably iOS Safari) have no usable speech
+  // recognition: hide the mic and lean on typing plus read-aloud instead.
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  let rec = null;
   if (SR) {
-    rec = new SR();
-    rec.lang = "en-US";
-    rec.interimResults = false;
-    rec.maxAlternatives = 1;
-    rec.onresult = (e) => {
-      const text = e.results[0][0].transcript;
-      mic.classList.remove("listening");
-      send(text);
-    };
+    const rec = new SR();
+    rec.lang = "en-US"; rec.interimResults = false; rec.maxAlternatives = 1;
+    rec.onresult = (e) => { mic.classList.remove("listening"); send(e.results[0][0].transcript); };
     rec.onend = () => mic.classList.remove("listening");
     rec.onerror = () => mic.classList.remove("listening");
     mic.addEventListener("click", () => {
       if (mic.classList.contains("listening")) { rec.stop(); return; }
       speechSynthesis.cancel();
       mic.classList.add("listening");
-      rec.start();
+      try { rec.start(); } catch (e) { mic.classList.remove("listening"); }
     });
   } else {
-    mic.addEventListener("click", () =>
-      bubble("tutor", "This browser cannot hear you, but you can type to me below!"));
+    mic.classList.add("hidden");
+    $("miclabel").textContent = "type your question, I will read my answer out loud";
+    typed.style.maxWidth = "none";
   }
 
-  document.getElementById("newchat").addEventListener("click", async () => {
-    await fetch("/api/new", { method: "POST" });
-    chat.innerHTML = "";
+  $("newchat").addEventListener("click", async () => {
+    await post("/api/new");
+    chat.innerHTML = ""; sessionOver = false;
+    $("miclabel").textContent = SR ? "press the button and talk" : "type your question, I will read my answer out loud";
     hello();
   });
 
-  function hello() {
-    const greeting = "Hi! I'm Whyzr. Ask me a WHY question, any one you like!";
-    bubble("tutor", greeting);
+  window.addEventListener("pagehide", () => {
+    try { navigator.sendBeacon("/api/bye"); } catch (e) { /* best effort */ }
+  });
+
+  function hello(nickname) {
+    bubble("tutor", nickname
+      ? `Hi ${nickname}! I'm Whyzr. Ask me a WHY question, any one you like!`
+      : "Hi! I'm Whyzr. Ask me a WHY question, any one you like!");
   }
-  // Voices load async in some browsers; warm them up.
+
+  function startChat(nickname, note) {
+    show("chat", "dock", "miclabel", "newchat", "parentLink");
+    if (note) bubble("tutor", note);
+    hello(nickname);
+  }
+
+  // ---- boot: who am I? ----
+  $("codeBtn").addEventListener("click", async () => {
+    const { status, data } = await post("/api/code", { code: $("code").value });
+    if (status !== 200) { $("codeErr").textContent = data.error || "That did not work."; return; }
+    data.setUp ? boot() : show("setup");
+  });
+  $("code").addEventListener("keydown", (e) => { if (e.key === "Enter") $("codeBtn").click(); });
+
+  $("setupBtn").addEventListener("click", async () => {
+    const payload = {
+      nickname: $("nick").value, age: $("age").value,
+      pin: $("pin").value, parentConfirmed: $("parentOk").checked,
+    };
+    const { status, data } = await post("/api/setup", payload);
+    if (status !== 200) { $("setupErr").textContent = data.error || "Something went wrong."; return; }
+    await post("/api/new");
+    startChat(data.nickname, data.note);
+  });
+
+  async function boot() {
+    const me = await fetch("/api/me").then((r) => r.json()).catch(() => ({}));
+    if (!me.authed) return show("gate");
+    if (!me.setUp) return show("setup");
+    if (me.napping) {
+      show("chat");
+      bubble("tutor", "Whyzr is having a nap right now. Come back tomorrow and we will explore something new!");
+      return;
+    }
+    await post("/api/new"); // every page open is a fresh adventure
+    startChat(me.nickname);
+  }
+
   speechSynthesis.getVoices();
   if (speechSynthesis.onvoiceschanged !== undefined) {
     speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
   }
-  // Every page open is a fresh adventure: long-term memory lives in the
-  // growth journal, never in a leftover chat session. Closing the tab says
-  // goodbye so the old session writes its journal entry.
-  window.addEventListener("pagehide", () => {
-    try { navigator.sendBeacon("/api/bye"); } catch (e) { /* best effort */ }
-  });
-  fetch("/api/new", { method: "POST" }).finally(hello);
+  boot();
 </script>
 </body>
 </html>

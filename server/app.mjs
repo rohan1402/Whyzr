@@ -41,10 +41,11 @@ ensureDataDirs();
 const pendingTokens = new Set();
 
 const page = (name) => readFileSync(join(REPO_ROOT, "ui", name));
+// No admin page by design: review is a terminal job (npm run review), not a
+// screen. The admin API endpoints below back that CLI.
 const PAGES = {
   kid: page("index.html"),
   parent: page("parent.html"),
-  admin: page("admin.html"),
 };
 
 // ---------------------------------------------------------------- helpers
@@ -122,7 +123,6 @@ async function handle(req, res, url) {
   // Pages
   if (req.method === "GET" && (pathname === "/" || pathname === "/index.html")) return html(res, PAGES.kid);
   if (req.method === "GET" && pathname === "/parent") return html(res, PAGES.parent);
-  if (req.method === "GET" && pathname === "/admin") return html(res, PAGES.admin);
   if (req.method === "GET" && pathname === "/healthz") return json(res, 200, { ok: true });
 
   // --- kid: access code -> device token
@@ -264,6 +264,13 @@ async function handle(req, res, url) {
       report: journal.progressReport(dir),
       remotes: git(dir, ["remote"]).split("\n").filter(Boolean),
     });
+  }
+
+  if (req.method === "GET" && pathname === "/api/parent/diff") {
+    const kidId = parentKid(req, url);
+    if (!kidId) return json(res, 401, { error: "unauthorized" });
+    const diff = journal.commitDiff(paths.kidRepo(kidId), url.searchParams.get("hash") || "");
+    return diff ? json(res, 200, { diff }) : json(res, 404, { error: "not found" });
   }
 
   if (req.method === "POST" && pathname === "/api/parent/rules") {
