@@ -30,7 +30,7 @@ process.stdin.on("end", () => {
   const txt = readFileSync(JOURNAL, "utf8");
   const sessions = txt.split(/\n(?=## )/).filter((s) => s.startsWith("## "));
 
-  console.log("# whyAI progress report\n");
+  console.log("# Whyzr progress report\n");
   console.log(`Journal sessions recorded: ${sessions.length}\n`);
 
   console.log("## Journal history (git)");

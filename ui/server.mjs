@@ -1,4 +1,4 @@
-// ui/server.mjs: the whyAI kid interface server.
+// ui/server.mjs: the Whyzr kid interface server.
 //
 //   node ui/server.mjs    (serves http://localhost:3456)
 //
@@ -12,7 +12,7 @@
 //   - every retirement path (new adventure, page close, the session-length
 //     cap) first asks the old session to write its journal entry, in the
 //     background, before the session object is dropped
-//   - the session-length cap (default 20 minutes, WHYAI_SESSION_MINUTES to
+//   - the session-length cap (default 20 minutes, WHYZR_SESSION_MINUTES to
 //     override) is enforced HERE in code; RULES.md asks the model to land
 //     softly, the interface guarantees the landing happens
 //
@@ -27,7 +27,7 @@ import { dirname, join } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 3456;
-const SESSION_MAX_MS = Number(process.env.WHYAI_SESSION_MINUTES || 20) * 60_000;
+const SESSION_MAX_MS = Number(process.env.WHYZR_SESSION_MINUTES || 20) * 60_000;
 const WRAPUP_PROMPT =
   "We are done for today. Please do your session wrap-up now: write the " +
   "growth journal entry for this session and save it with the memory tool.";
@@ -75,7 +75,7 @@ function ensureSession() {
       // 90s deadline), so we drop it and start fresh on the next message.
       // The journal for this session is lost; log it loudly rather than
       // silently. Sessions retired the normal way (retire()) always journal.
-      console.error(`[whyAI] session stream FAULTED (journal for this session lost): ${err?.message || err}`);
+      console.error(`[Whyzr] session stream FAULTED (journal for this session lost): ${err?.message || err}`);
       if (session === s) session = null; // self-heal: next message starts fresh
     }
   })();
@@ -128,13 +128,13 @@ async function retireNow(s, why) {
         await new Promise((r) => setTimeout(r, 500));
       }
       const done = completedTurns(s.q.messages()) > before;
-      console.log(`[whyAI] session retired (${why}): wrap-up ${done ? "completed - journal written" : "TIMED OUT - journal NOT written"} after ${s.userTurns} kid turns`);
+      console.log(`[Whyzr] session retired (${why}): wrap-up ${done ? "completed - journal written" : "TIMED OUT - journal NOT written"} after ${s.userTurns} kid turns`);
     } else {
       push(s, null);
-      console.log(`[whyAI] session retired (${why}): too short for a journal entry (${s.userTurns} turns)`);
+      console.log(`[Whyzr] session retired (${why}): too short for a journal entry (${s.userTurns} turns)`);
     }
   } catch (err) {
-    console.error(`[whyAI] retire error: ${err?.message || err}`);
+    console.error(`[Whyzr] retire error: ${err?.message || err}`);
   } finally {
     try { s.q.abort?.(); } catch { /* already gone */ }
   }
@@ -216,7 +216,7 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify(out));
       } catch (err) {
-        console.error(`[whyAI] /api/say failed: ${err?.stack || err}`);
+        console.error(`[Whyzr] /api/say failed: ${err?.stack || err}`);
         res.writeHead(500, { "content-type": "application/json" });
         return res.end(JSON.stringify({ error: "Something got tangled up in my thinking. Let's try again!" }));
       }
@@ -232,5 +232,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "127.0.0.1", () =>
-  console.log(`whyAI kid interface: http://localhost:${PORT} (agent dir: ${ROOT}, session cap: ${SESSION_MAX_MS / 60000} min)`)
+  console.log(`Whyzr kid interface: http://localhost:${PORT} (agent dir: ${ROOT}, session cap: ${SESSION_MAX_MS / 60000} min)`)
 );

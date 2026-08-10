@@ -1,14 +1,14 @@
-# whyAI
+# Whyzr
 
 The friend who asks why back.
 
-whyAI is a Socratic thinking buddy for kids, built end to end on
+Whyzr is a Socratic thinking buddy for kids, built end to end on
 [gitagent](https://www.gitagent.sh/). It helps children use AI without
 offloading their thinking: it never gives direct answers, it asks one
 guiding question at a time, and it keeps a growth journal of what the
 child figured out, committed to git. Every parent who has watched a
 five year old talk to a chatbot has felt the same worry: the kid is
-getting answers, but is the kid still learning to think? whyAI is built
+getting answers, but is the kid still learning to think? Whyzr is built
 so the only way through a question is thinking.
 
 <!-- demo GIF goes here after recording (M8) -->
@@ -17,7 +17,7 @@ so the only way through a question is thinking.
 
 - Never answers directly. Ask it "what is 7 times 8" ten different ways
   and you get ten warm refusals and one small next step.
-- One question per turn. A child's attention is a budget; whyAI spends
+- One question per turn. A child's attention is a budget; Whyzr spends
   one question of it at a time.
 - Hints shrink, and point at where to look, never at what will be found.
 - The child steers. New question, new topic, mid mystery? The tutor
@@ -40,7 +40,7 @@ so the only way through a question is thinking.
 Every feature is load-bearing on a gitagent primitive. Nothing here is a
 wrapper with a logo.
 
-| whyAI feature | gitagent primitive |
+| Whyzr feature | gitagent primitive |
 |---|---|
 | Tutor persona per age | SOUL.md, one per branch |
 | The constitution | RULES.md, verbatim in the system prompt |
@@ -57,8 +57,8 @@ Requirements: Node 22 or newer, git, an Anthropic API key.
 
 ```bash
 npm install -g @open-gitagent/gitagent
-git clone https://github.com/rohan1402/whyAI.git
-cd whyAI
+git clone https://github.com/rohan1402/Whyzr.git
+cd Whyzr
 npm install
 cp .env.example .env    # then paste your ANTHROPIC_API_KEY into .env
 ```

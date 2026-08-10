@@ -1,4 +1,4 @@
-// evals/mock-llm.mjs: OpenAI-compatible scenario server for whyAI machinery tests.
+// evals/mock-llm.mjs: OpenAI-compatible scenario server for Whyzr machinery tests.
 // Runs the MACHINERY (hooks, memory commits, declarative tools) against the real
 // gitagent runtime with zero API cost. Behavioral quality is tested separately
 // with a real model in run-evals.mjs.

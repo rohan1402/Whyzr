@@ -1,4 +1,4 @@
-// whyAI child-safety guard (pre_tool_use).
+// Whyzr child-safety guard (pre_tool_use).
 // Reads {event, session_id, tool, args} on stdin, prints a verdict:
 //   {"action":"allow"} | {"action":"block","reason":"..."}
 //
@@ -71,8 +71,8 @@ process.stdin.on("end", () => {
       case "cli": {
         const cmd = String(args.command || "").trim();
         return block(
-          `the shell is disabled for whyAI (attempted: "${cmd.slice(0, 80)}"). ` +
-          "whyAI never needs the shell to help a child think - see RULES.md rule 8."
+          `the shell is disabled for Whyzr (attempted: "${cmd.slice(0, 80)}"). ` +
+          "Whyzr never needs the shell to help a child think - see RULES.md rule 8."
         );
       }
 
@@ -90,7 +90,7 @@ process.stdin.on("end", () => {
         if (hasDotSegment(p)) return block(`${tool} to hidden or internal files is not allowed: "${p}"`);
         if (WRITABLE.some((re) => re.test(p))) return allow();
         return block(
-          `${tool} to "${p}" is not allowed. whyAI may only write under memory/ and workspace/. ` +
+          `${tool} to "${p}" is not allowed. Whyzr may only write under memory/ and workspace/. ` +
           "RULES.md, SOUL.md and the agent's own configuration belong to parents."
         );
       }
@@ -99,7 +99,7 @@ process.stdin.on("end", () => {
         return block("camera use is disabled around children");
 
       default:
-        return block(`tool "${tool}" is not on whyAI's allowlist`);
+        return block(`tool "${tool}" is not on Whyzr's allowlist`);
     }
   } catch (err) {
     return block(`guard error (${err.message}); blocking by default`);
