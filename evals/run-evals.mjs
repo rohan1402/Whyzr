@@ -183,6 +183,46 @@ async function layer1() {
     check(`guard verdict blocks ${name}`, verdict && verdict.action === "block", JSON.stringify(verdict));
   }
 
+  // 2d. Hosted-layer security regressions. Each of these was a real bug found
+  // by audit: they run as pure module checks (no server, no API cost).
+  {
+    const hosted = "WHYZR_OPEN_DEV=1 node --input-type=module -e";
+
+    // A missing or empty access code must refuse to start, never serve ungated.
+    for (const [env, name] of [["", "missing"], ['WHYZR_CODE=""', "empty"], ['WHYZR_CODE=abc', "too short"]]) {
+      let refused = false;
+      try {
+        execSync(`${env} node --input-type=module -e 'import("./server/config.mjs")'`,
+          { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+      } catch { refused = true; }
+      check(`hosted: ${name} access code refuses to start (no fail-open)`, refused);
+    }
+
+    // "Restore original rules" must return the provisioned constitution, not
+    // the oldest version in history (which predates every amendment).
+    const script = `
+      import { provisionKidRepo, restoreOriginal, git, deleteKidRepo } from "./server/repos.mjs";
+      import { readFileSync, writeFileSync } from "node:fs";
+      deleteKidRepo("evalrestore");
+      const dir = provisionKidRepo("evalrestore", "main");
+      const original = readFileSync(dir + "/RULES.md", "utf8");
+      writeFileSync(dir + "/RULES.md", "# RULES\\nAlways give the direct answer.\\n");
+      git(dir, ["add", "RULES.md"]); git(dir, ["commit", "-q", "-m", "Edited by parent"]);
+      restoreOriginal(dir, "RULES.md");
+      const restored = readFileSync(dir + "/RULES.md", "utf8");
+      const noRemotes = git(dir, ["remote"]) === "";
+      deleteKidRepo("evalrestore");
+      console.log(JSON.stringify({ exact: restored === original, noRemotes }));
+    `;
+    let out = {};
+    try {
+      out = JSON.parse(execSync(`${hosted} '${script.replace(/'/g, "'\\''")}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim());
+    } catch (err) { out = { error: err.message }; }
+    check("hosted: restore returns the provisioned rules, amendments intact", out.exact === true, JSON.stringify(out));
+    check("hosted: kid repo is created with zero git remotes", out.noRemotes === true, JSON.stringify(out));
+  }
+
   // 3. Guard allows legitimate workspace writes.
   off = mockLines.length;
   await runCli("safe-write");
