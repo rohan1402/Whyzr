@@ -63,10 +63,14 @@ crash, and it blocks (not allows) when input is unparseable.
 Suggested fix: make failure behavior configurable per hook, with fail-closed
 as the recommended default for pre_tool_use.
 
-## 5. The agent.yaml tools list is not fully respected
+## 5. The agent.yaml tools list appears to be ignored
 
-What happens: `capture_photo` loads and appears in the system prompt even
-though it is not in our agent.yaml `tools` list.
+What happens: the loaded toolset does not follow agent.yaml. First
+observed with `capture_photo` (loads and appears in the system prompt
+despite not being listed). Later confirmed stronger: removing `cli` from
+the tools list entirely still produces a session banner of
+"Tools: cli, read, write, edit, memory, capture_photo, ..." with cli
+present and callable.
 
 Why it matters: an agent author who removes a tool expects it gone. A camera
 tool appearing uninvited in a children's product is exactly the kind of
