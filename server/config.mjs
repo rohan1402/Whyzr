@@ -72,9 +72,16 @@ export const config = {
 // forgot it entirely) silently served the app with no gate at all.
 export const LOCAL_DEV = bool("WHYZR_OPEN_DEV", false);
 
-// Fail fast rather than fail open: in any non-dev run the code must exist and
-// be long enough to be worth typing.
-if (!LOCAL_DEV) {
+/**
+ * Fail fast rather than fail open. Called by the SERVER at startup only:
+ * importing this module must stay side-effect free so CLI tools (npm run
+ * review) and the eval harness can read config without a code being set.
+ *
+ * Note the gate is already closed by default even without this check:
+ * checkCode compares against a null code and rejects everything.
+ */
+export function assertServerConfig() {
+  if (LOCAL_DEV) return;
   if (config.code === null) {
     console.error(
       "\nWHYZR_CODE is not set.\n" +

@@ -25,7 +25,7 @@ import http from "node:http";
 import { readFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { config, LOCAL_DEV, REPO_ROOT, ensureDataDirs, paths } from "./config.mjs";
+import { config, LOCAL_DEV, REPO_ROOT, ensureDataDirs, paths, assertServerConfig } from "./config.mjs";
 import * as registry from "./registry.mjs";
 import * as auth from "./auth.mjs";
 import * as caps from "./caps.mjs";
@@ -34,6 +34,7 @@ import * as journal from "./journal.mjs";
 import { provisionKidRepo, snapAge, changeAgeBranch, git, deleteKidRepo } from "./repos.mjs";
 import { listTranscripts, readTranscript } from "./transcripts.mjs";
 
+assertServerConfig();
 ensureDataDirs();
 
 // Device tokens issued before any kid exists (very first visit). A token here
@@ -214,8 +215,10 @@ async function handle(req, res, url) {
   if (req.method === "POST" && pathname === "/api/setup") {
     const token = auth.parseCookies(req).whyzr_token;
     const existing = auth.kidFromRequest(req);
-    // Consume the setup token atomically so it can never create two kids.
-    const pendingOk = Boolean(token) && takePending(token);
+    // Check the token WITHOUT consuming it: a failed validation below must
+    // not burn the tester's one setup attempt (it did, and the retry then
+    // said "enter the code first" with no way forward).
+    const pendingOk = Boolean(token) && (pendingTokens.get(token) ?? 0) >= Date.now();
     if (!LOCAL_DEV && !existing && !pendingOk) {
       return json(res, 401, { error: "Enter the code first." });
     }
@@ -247,6 +250,12 @@ async function handle(req, res, url) {
         });
       }
       return json(res, 200, { ok: true, nickname: kid.nickname, age: snap.age, note: snap.note });
+    }
+
+    // All validation passed: NOW consume the setup token, atomically, so it
+    // can create exactly one kid.
+    if (!LOCAL_DEV && !existing && !takePending(token)) {
+      return json(res, 401, { error: "Enter the code first." });
     }
 
     // Provision the repo BEFORE trusting the registry entry: registering
