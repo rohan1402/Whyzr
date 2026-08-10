@@ -59,7 +59,8 @@ Requirements: Node 22 or newer, git, an Anthropic API key.
 npm install -g @open-gitagent/gitagent
 git clone https://github.com/rohan1402/Whyzr.git
 cd Whyzr
-npm install
+npm ci                  # ci, not install: keeps package-lock.json pristine,
+                        # which the eval runner requires (clean git tree)
 cp .env.example .env    # then paste your ANTHROPIC_API_KEY into .env
 ```
 

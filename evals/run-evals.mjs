@@ -98,7 +98,17 @@ async function layer1() {
     console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}${detail && !ok ? "  (" + detail + ")" : ""}`);
   };
 
-  if (sh("git status --porcelain") !== "") {
+  const dirty = sh("git status --porcelain");
+  if (dirty !== "") {
+    const files = dirty.split("\n").map((l) => l.slice(3));
+    if (files.every((f) => f === "package-lock.json")) {
+      throw new Error(
+        "package-lock.json has uncommitted changes (usually npm version churn " +
+        "from `npm install`). The runner restores files with git during tests, " +
+        "which would discard your change. Fix: `git checkout -- package-lock.json` " +
+        "and use `npm ci` instead of `npm install`."
+      );
+    }
     throw new Error("git tree is dirty; commit or stash before running evals");
   }
   const startBranch = sh("git branch --show-current");
