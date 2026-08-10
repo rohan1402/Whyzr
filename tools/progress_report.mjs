@@ -35,11 +35,32 @@ process.stdin.on("end", () => {
 
   console.log("## Journal history (git)");
   try {
-    const log = execSync(
-      `git log --date=short --pretty=format:'- %ad  %s' -- ${JOURNAL}`,
+    // A journal commit is one that ADDS a session heading (## ...) to the
+    // journal. Housekeeping commits (scaffolds, resets) touch the file but
+    // never add a session, so they are filtered from the parent view.
+    // Message-prefix filtering is deliberately not used: real sessions do
+    // not always follow the commit-message convention.
+    const raw = execSync(
+      `git log -p --date=short --pretty=format:'COMMIT\t%ad\t%s' -- ${JOURNAL}`,
       { encoding: "utf8" }
-    ).trim();
-    console.log(log ? log.split("\n").slice(0, 15).join("\n") : "- (no journal commits yet)");
+    );
+    const entries = [];
+    let current = null;
+    for (const line of raw.split("\n")) {
+      if (line.startsWith("COMMIT\t")) {
+        const [, date, subject] = line.split("\t");
+        current = { date, subject, addsSession: false };
+        entries.push(current);
+      } else if (current && /^\+## /.test(line)) {
+        current.addsSession = true;
+      }
+    }
+    const journalCommits = entries.filter((e) => e.addsSession);
+    console.log(
+      journalCommits.length
+        ? journalCommits.slice(0, 15).map((e) => `- ${e.date}  ${e.subject}`).join("\n")
+        : "- (no journal commits yet)"
+    );
   } catch {
     console.log("- (git history unavailable)");
   }

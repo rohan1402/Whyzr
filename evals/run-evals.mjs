@@ -214,6 +214,11 @@ async function layer1() {
       report.includes("Makes keen observations (x1)") && report.includes("Loves comparing places"),
       "sections empty against label variants or bullet lists"
     );
+    check(
+      "progress_report filters housekeeping commits from journal history",
+      !report.includes("Reset growth journal") && !report.includes("Scaffold gitagent"),
+      "housekeeping commits leaked into the parent view"
+    );
   } finally {
     sh("git checkout -q -- memory/MEMORY.md");
   }

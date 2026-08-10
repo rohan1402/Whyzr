@@ -154,7 +154,7 @@ Two layers, one command each.
 Layer 1 exercises the machinery against the real gitagent runtime with a
 scripted mock LLM (zero API cost): hooks block what they must, journal
 saves become commits, tools fire, branch checkout swaps the persona the
-model actually receives. 27 of 27 checks pass, including regression
+model actually receives. 28 of 28 checks pass, including regression
 tests from two independent security audits of this repo: allowlist
 command chaining, case-insensitive filesystem reads, guard fail-closed
 fuzzing on malformed hook input, direct guard verdicts for every
