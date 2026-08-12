@@ -2,8 +2,9 @@
 //
 // Layer 1 (machinery, free): runs the real gitagent CLI against the scripted
 // mock LLM and asserts that the MACHINERY works: hooks block what they must,
-// memory saves become git commits, declarative tools fire, and git checkout
-// swaps the age persona.
+// memory saves become git commits, declarative tools fire, and the four
+// worktree invariants hold (learning is committed, two children diverge, a
+// destroyed worktree rebuilds from its branch, one writer per child).
 //
 // Layer 2 (behavior, costs API credits): drives the real tutor via the
 // gitagent SDK with scripted kid conversations, then grades each transcript

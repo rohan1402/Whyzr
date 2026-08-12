@@ -25,7 +25,10 @@ so the only way through a question is thinking.
 - Growth journal: after a session, the tutor writes what the child
   figured out and how, and commits it. `git log` becomes a months-long
   record of a child's reasoning development.
-- Age modes are git branches. `git checkout age-5` swaps the persona.
+- One branch per child. A child's branch accumulates their journal and
+  their own confidence scores for each reasoning move, so
+  `git diff child-a child-b -- skills/` shows two children who have
+  taught the same tutor different things.
 - Tool-level child safety is enforced in code (a pre_tool_use hook),
   not in prompts. Conversational safety (off-limits topics, tone) is
   constitution-enforced and eval-verified; the hook cannot read minds,
@@ -42,10 +45,11 @@ wrapper with a logo.
 
 | Whyzr feature | gitagent primitive |
 |---|---|
-| Tutor persona per age | SOUL.md, one per branch |
+| Tutor persona | SOUL.md, verbatim in the system prompt |
 | The constitution | RULES.md, verbatim in the system prompt |
 | Growth journal with history | memory tool: every save is a git commit |
-| Age modes | git branches (main is age 8, age-5, age-12) |
+| One learning history per child | git branches + worktrees: child-<id>, checked out side by side off one .git |
+| Reasoning moves that earn their keep | skills/ with confidence frontmatter, committed per session |
 | Child safety guard | hooks/hooks.yaml pre_tool_use, blocks before execution |
 | Parent progress report | declarative tool: tools/progress_report.yaml + .sh |
 | Tutoring technique | skills/socratic-method, skills/session-wrapup |
@@ -113,12 +117,11 @@ flips a kid-safe nap mode, and a session lifecycle that guarantees the
 growth journal is written when a session ends, whether by goodbye, closed
 tab, turn cap or time cap.
 
-Switch the tutor's age:
+See what one child has learned, or how two differ:
 
 ```bash
-git checkout age-5    # five year old mode
-git checkout age-12   # twelve year old mode
-git checkout main     # age 8 default
+git -C .whyzr-data/agent-repo log --oneline child-<id>
+git -C .whyzr-data/agent-repo diff child-a child-b -- skills/
 ```
 
 Parent progress report (also available to the agent as a tool):
@@ -236,22 +239,37 @@ parent-facing summary: sessions, thinking moves observed with counts,
 and open sparks. Journal entries describe thinking, not private details,
 and the constitution forbids storing personal information in them.
 
-## Age modes
+## Age modes, and a design mistake worth admitting
 
-Branches differ from main by exactly one file, SOUL.md, so the diff IS
-the product spec:
+The first version of Whyzr made age a git branch: `age-5`, `main`, and
+`age-12`, differing by exactly one file. It demoed well. It was also a
+config switch wearing a git costume. The branches never diverged, never
+merged, and never had a second commit; three copies of the persona had to
+be kept in sync by hand, and a birthday meant a checkout. Nothing about
+git was doing any work that an `if` statement could not.
+
+Age is now a parameter (`server/age.mjs`), appended to the system prompt
+for the session. Same three voices, one SOUL.md.
+
+Branches now carry the thing that genuinely diverges: what each child has
+taught the tutor. Every child is a branch, checked out as its own
+worktree so many children can be in session at once against one shared
+`.git`. Their journal and their per-move confidence scores accumulate
+there, which makes the git operation meaningful rather than decorative:
 
 ```
-git diff main age-5 -- SOUL.md
+git diff child-a child-b -- skills/
 ```
+
+Two children, the same five reasoning moves, different evidence about
+which ones work for them.
 
 Age 5: five-to-eight word sentences, no big words at all, one-rung
 ladders, questions answerable by looking or touching. Age 8: short
-sentences, bigger words explained in the same breath. Age 12: a
+sentences, bigger words explained in the same breath. Age 12 to 14: a
 respectful lab partner that asks for hypotheses, introduces real terms
 after the concept is built, and lets you defend a wrong idea until the
-evidence wins. The eval suite verifies that checking out each branch
-changes the persona the model actually receives.
+evidence wins.
 
 ## Architecture
 
