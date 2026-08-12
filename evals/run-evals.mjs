@@ -425,6 +425,20 @@ async function layer1() {
       setStats("predict-first", 2, 2);
       const byRate = selectMove(d);
 
+      // Tie-break: when two moves sit at the same smoothed rate, the
+      // least-tried one wins. Regression guard for the seeded run where a
+      // tie resolved alphabetically and one move then held the lead for
+      // fourteen straight sessions while a rival was tried once.
+      // decompose 2/2 and predict-first 2/2 are both 0.750; predict-first is
+      // alphabetically LAST, so only a real tie-break can pick it.
+      setStats("analogy-bridge", 9, 1); setStats("flip-it", 9, 1);
+      setStats("observe-recall", 9, 1); setStats("decompose", 4, 3);
+      setStats("predict-first", 2, 2);
+      const tiedA = selectMove(d);
+      setStats("decompose", 2, 2);          // now an exact tie at 2/2
+      setStats("predict-first", 6, 5);      // same 0.750 rate, more evidence
+      const tieBreak = selectMove(d);
+
       // Fix 0: what actually reaches the model.
       const chosen = commitToMove(d);
       const yaml = join(d, "agent.yaml");
@@ -437,6 +451,8 @@ async function layer1() {
 
       console.log(JSON.stringify({
         untriedFirst: untriedFirst.name === "predict-first" && untriedFirst.why === "never tried",
+        tiedA: tiedA.name,
+        tieBreak: tieBreak.name,
         byRate: byRate.name === "analogy-bridge",
         rivalsUnfiltered: inPrompt(withoutF.systemPrompt).length,
         rivalsFiltered: inPrompt(withF.systemPrompt),
@@ -455,6 +471,7 @@ async function layer1() {
     const selChecks = [
       ["fix 1b: an untried move is tried before a proven one", s2.untriedFirst === true],
       ["fix 1: smoothed success rate beats a small perfect record", s2.byRate === true],
+      ["tie-break: on an exact tie the least-tried move wins", s2.tieBreak === "decompose"],
       ["fix 0: without the filter, ALL rival moves reach the prompt", s2.rivalsUnfiltered === 5],
       ["fix 0: with the filter, exactly one rival move reaches the prompt",
         Array.isArray(s2.rivalsFiltered) && s2.rivalsFiltered.length === 1],
