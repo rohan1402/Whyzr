@@ -19,7 +19,22 @@ Stage 1a and 1b are complete, plus six fixes from an adversarial review:
 - `repos.mjs` (clone-per-kid) is deleted; everything is on `worktrees.mjs`.
 - 41/41 layer-1 machinery checks pass, including 9 new `stage1:` checks.
 
-## Open, in the order worth doing
+## Stage 1 is now complete
+
+Everything in the "Open" list below was built. Kept for the record of what
+was wrong and why. Current state: 60/60 machinery checks, the loop is closed
+(judge -> verdict -> confidence -> commit), and FEEDBACK.md carries 21
+findings.
+
+Remaining, and NOT started:
+- The tutor calling the judge as a tool to control grading TIMING (design
+  section 2). Grading currently runs when the session retires. The verdict
+  is unaffected: the tutor never controls the verdict, only when it happens.
+- Stage 2 (seeding two fictional children, the gradable-to-ungradable ratio).
+- Stage 3 (consent, scripts/delete-child.sh, dashboard panes).
+- `maxKids` still defaults to 1, so the two-child demo needs MAX_KIDS=2.
+
+## What was open, in the order it was done
 
 ### 1. `syncTemplate()` has never worked. Production bug.
 
