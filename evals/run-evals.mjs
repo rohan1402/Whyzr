@@ -175,6 +175,27 @@ async function layer1() {
     [{ tool: "capture_photo", args: {} }, "camera"],
     [{ tool: "totally_new_tool", args: {} }, "unknown tool"],
   ];
+  // 2c-i. Shell injection through the allow-listed learning tools. gitagent
+  // interpolates their arguments into a double-quoted shell word, so the
+  // guard must inspect arguments and not just tool names. The ALLOW cases
+  // matter as much as the BLOCK ones: a guard that refuses ordinary journal
+  // prose gets switched off, and a switched-off guard protects nobody.
+  const injectionCases = [
+    ["block", { tool: "memory", args: { action: "save", message: "journal: puddles $(touch PROOF.txt)", content: "ok" } }, "memory commit message, command substitution"],
+    ["block", { tool: "memory", args: { action: "save", message: "x `whoami`", content: "ok" } }, "memory commit message, backtick"],
+    ["block", { tool: "memory", args: { action: "save", message: "trailing backslash\\", content: "ok" } }, "backslash escaping the escape"],
+    ["block", { tool: "skill_learner", args: { action: "delete", skill_name: "a$(id)" } }, "skill_learner skill_name"],
+    ["allow", { tool: "memory", args: { action: "save", message: "journal: she worked out why ice floats", content: "## day\n\nweather; ice; puddles!\n" } }, "normal journal prose is not refused"],
+    ["allow", { tool: "memory", args: { action: "save", message: "journal: money question", content: "why does $5 buy less & prices > last year" } }, "a dollar sign in content, which is never shelled"],
+  ];
+  for (const [want, input, name] of injectionCases) {
+    let v = null;
+    try {
+      v = JSON.parse(execSync("node hooks/guard.mjs", { cwd: ROOT, input: JSON.stringify(input), encoding: "utf8" }).trim());
+    } catch { /* fail */ }
+    check(`guard ${want}s ${name}`, v && v.action === want, JSON.stringify(v));
+  }
+
   for (const [input, name] of directCases) {
     let verdict = null;
     try {

@@ -29,6 +29,61 @@ function verdict(v) {
 const allow = () => verdict({ action: "allow" });
 const block = (reason) => verdict({ action: "block", reason });
 
+/**
+ * The characters that can actually break out, scoped to where the value
+ * lands. gitagent interpolates into a DOUBLE-QUOTED shell word:
+ *
+ *   git commit -m "<value>"
+ *
+ * Inside double quotes, `;` `|` `&` `<` `>` and newlines are literal, so
+ * blocking them would refuse ordinary journal prose ("she asked why; then
+ * she guessed") to stop nothing. Exactly three characters matter:
+ *
+ *   $         command substitution, $(...) and ${...}
+ *   backtick  the older command substitution
+ *   \         gitagent escapes " as \", so a trailing backslash escapes the
+ *             escape and closes the quoted string early
+ *
+ * Narrow on purpose. A guard that breaks the product to stop an attack gets
+ * switched off, and a switched-off guard protects nobody.
+ */
+const SHELL_META = /[$`\\]/;
+
+/**
+ * Argument names that never reach a shell and so are not checked.
+ *
+ * `content` is the journal body: memory.js writes it with writeFile and only
+ * `message` is interpolated into the commit command (verified,
+ * dist/tools/memory.js:111-120). A child's question genuinely can contain a
+ * dollar sign ("why does a dollar buy less than it used to"), and refusing
+ * to record that would be the guard damaging the product it protects.
+ */
+const NOT_SHELLED = new Set(["content"]);
+
+/** Walk the args and report the first value that could break out of a shell. */
+function shellUnsafe(args, depth = 0) {
+  if (depth > 6) return null; // defensive: no unbounded recursion
+  if (typeof args === "string") {
+    const hit = args.match(SHELL_META);
+    return hit ? JSON.stringify(hit[0]) : null;
+  }
+  if (Array.isArray(args)) {
+    for (const v of args) {
+      const found = shellUnsafe(v, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+  if (args && typeof args === "object") {
+    for (const [k, v] of Object.entries(args)) {
+      if (NOT_SHELLED.has(k)) continue;
+      const found = shellUnsafe(v, depth + 1);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 // Paths the agent may write to. Everything else is parent territory.
 const WRITABLE = [/^memory\//, /^workspace\//];
 
@@ -62,9 +117,37 @@ process.stdin.on("end", () => {
 
   try {
     switch (tool) {
+      // These three are allowed by PURPOSE but not by trust. gitagent builds
+      // a shell string from their arguments and runs it through execSync,
+      // escaping only the double quote:
+      //
+      //   execSync(`git add "..." && git commit -m "${msg.replace(/"/g,'\\"')}"`)
+      //   (dist/tools/memory.js:120, skill-learner.js:78 and :341)
+      //
+      // `$(...)` and backticks survive that and execute. The message is
+      // chosen by the model, so any prompt injection that reaches a commit
+      // message is arbitrary command execution in this process, with this
+      // process's environment. Verified: a message containing
+      // `$(touch PROOF.txt)` created the file, and the commit subject still
+      // read normally afterwards.
+      //
+      // Allow-listing by tool name is therefore not enough. A guard that
+      // waves these through inspects nothing, which is the appearance of a
+      // sandbox rather than a sandbox. Reported upstream as FEEDBACK item 21;
+      // until it is fixed, the arguments are checked here.
       case "memory":
       case "task_tracker":
-      case "skill_learner":
+      case "skill_learner": {
+        const unsafe = shellUnsafe(args);
+        if (unsafe) {
+          return block(
+            `${tool} argument contains shell metacharacters (${unsafe}). ` +
+            "gitagent passes these to a shell, so they are refused here."
+          );
+        }
+        return allow();
+      }
+
       case "progress_report":
         return allow();
 

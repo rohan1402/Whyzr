@@ -5,7 +5,9 @@ load-bearing chassis: CLI, SDK, hooks, memory, declarative tools, branches,
 and the voice package. Versions tested: @open-gitagent/gitagent 2.0.2,
 @open-gitagent/voice 1.0.0, Node 24 on macOS. Each item lists what happens,
 why it matters, how Whyzr works around it, and a suggested fix. Items 1 to 5
-are the CLI and runtime, 6 to 7 are the SDK, 8 to 11 are the voice package.
+are the CLI and runtime, 6 to 7 are the SDK, 8 to 11 are the voice package,
+and 12 to 21 are the learning system, which is where we spent most of our
+time. Item 21 is a security issue and is the one we would fix first.
 
 ## 1. Any invocation scaffolds and auto-commits in the current directory
 
@@ -166,3 +168,224 @@ governed agent.
 Suggested fix: offer a relay mode where the realtime model is restricted to
 transcription and speech, and all conversational content comes from the
 gitagent.
+
+---
+
+# Second round: the learning system
+
+Items 12 to 19 come from building Whyzr's actual product loop on
+`skills/`, `adjustConfidence` and the reinforcement primitives. Everything
+below was read from the shipped source of 2.0.2 or observed running, and
+each says which.
+
+## 12. Skill stats are written but never committed, in a git-native framework
+
+What happens: `saveSkillStats` (dist/learning/reinforcement.js:78) is a bare
+`writeFile`. `task_tracker end` calls it after adjusting confidence, and
+nothing ever commits the result.
+
+Why it matters: this is the one that stings, because git is the whole pitch.
+Every confidence update sits as an uncommitted working-tree change. It is
+invisible to `git diff`, so the natural question for a multi-agent setup,
+"how do these two forks differ in what they have learned", returns nothing.
+It is also destroyed by any `git checkout`, `git worktree` rebuild, or fresh
+container. An agent that learns but never commits its learning is not
+git-native, it is a program with a text file.
+
+Whyzr workaround: the application commits the skills directory itself, once
+per session, alongside the journal.
+
+Suggested fix: commit stat changes the way the memory tool already commits
+memory (dist/tools/memory.js:120 does exactly this). It would make
+`git diff agent-a agent-b -- skills/` work out of the box, which is the most
+compelling demo the framework has.
+
+## 13. Successes are a no-op until something fails
+
+What happens: skills start at `confidence: 1.0`, and the success branch is
+`confidence + 0.1 * (1 - confidence)` (reinforcement.js:19), which is exactly
+0 at 1.0. Failure is a flat `-0.2` (reinforcement.js:24).
+
+Why it matters: a brand new skill that succeeds 50 times in a row has
+confidence 1.0, the same as one that has never been used. The number only
+starts carrying information after the first failure. Observed live in Whyzr:
+a child reached the answer, the judge returned success, and confidence moved
+from 1.0 to 1.0.
+
+Whyzr workaround: we do not select on confidence at all (see 14).
+
+Suggested fix: start skills below 1.0, or document plainly that confidence is
+a penalty counter rather than a quality estimate.
+
+## 14. Confidence saturates, so it cannot rank two working skills
+
+What happens: given the asymmetry in 13, confidence cannot represent "this
+skill works better than that one". Both sit at 1.0 until one fails, and
+after a failure the gap reflects recency of failure rather than quality.
+
+Why it matters: `skill_learner status` already displays a success ratio, and
+the counts needed for a real estimate (`usage_count`, `success_count`) are
+already tracked. The information is there; confidence just is not the field
+that carries it.
+
+Whyzr workaround: we select on a Laplace-smoothed success rate,
+`(success_count + 1) / (usage_count + 2)`, and leave confidence to do the job
+it is actually good at, which is flagging a skill below 0.4
+(`isSkillFlagged`, reinforcement.js:89).
+
+Suggested fix: expose a `successRate` helper next to `isSkillFlagged`, so
+applications do not each invent their own.
+
+## 15. An application's skill selection is silently overridden
+
+What happens: `formatSkillsForPrompt` (dist/skills.js) injects EVERY
+discovered skill into the system prompt with its confidence, and instructs
+the model to "ALWAYS scan the skill list below BEFORE taking ANY action"
+and pick. `loader.js` then asks the model to report `skill_used`.
+
+Why it matters: an application that does its own selection is not actually
+selecting. It can choose skill A while the model uses skill B, and skill A
+then gets credited or blamed for skill B's result. Every stored number ends
+up attached to the wrong skill, and nothing surfaces the mismatch. This is
+the most damaging item in this list precisely because it fails silently and
+the data still looks plausible.
+
+The escape hatch exists but is undocumented: `manifest.skills` in agent.yaml
+filters discovery to exactly the listed names (loader.js:193-197). Measured
+in Whyzr with `loadAgent`: without it, all five of our rival skills reach the
+prompt; with it, exactly one does.
+
+A second undocumented consequence, which cost us a bug: because the filter is
+exact, always-on skills disappear unless they are listed too. Filtering to
+just the chosen skill silently removed our session wrap-up skill, and the
+wrap-up is what writes the journal.
+
+Whyzr workaround: we rewrite `manifest.skills` per session to the chosen
+skill plus the always-on ones.
+
+Suggested fix: document `manifest.skills` as the selection mechanism, and
+either honour a caller-supplied choice in `query()` or state clearly in the
+docs that the model, not the application, picks.
+
+## 16. Success and failure are self-reported by the model
+
+What happens: `task_tracker end` takes the outcome as a parameter, and the
+model is the one calling it.
+
+Why it matters: with no external signal, the reinforcement system measures
+the model's opinion of its own work. In our data before we added an
+independent judge, every recorded outcome was `success`, and 8 of 13 tasks
+were never closed at all, so they produced no signal in either direction.
+
+Whyzr workaround: a separate judge, in a different model family, returns the
+verdict; the application calls `adjustConfidence` with it.
+
+Suggested fix: say prominently in the docs that reinforcement is only as good
+as the signal, and that supplying an external one is the application's job.
+
+## 17. A partial costs 0.05 of confidence but a full point of failure
+
+What happens: the `partial` branch (reinforcement.js:33-35) subtracts 0.05
+from confidence, a near miss, and then runs `failure_count++`, a total loss,
+identically to the `failure` branch.
+
+Why it matters: two different notions of "did not work" coexist in one
+record, undocumented. Any application computing a success rate from the
+counts treats near misses as complete failures, while the confidence number
+treats them as almost fine. The two disagree and neither is wrong on its own
+terms.
+
+(We initially believed a partial incremented neither counter, and that
+`success_count + failure_count` therefore drifted from `usage_count`. We
+checked the source before sending this, and that is not what ships. The
+counts do reconcile. The real issue is the one above.)
+
+Whyzr workaround: we removed partial from our verdict set entirely. Three
+states: success, failure, not gradeable. `adjustConfidence` is never called
+with a partial, and our code throws if anything tries.
+
+Suggested fix: make the confidence penalty and the counter agree, or document
+that partial is a failure that hurts less.
+
+## 18. Crystallization only ever learns from wins
+
+What happens: `skill_learner crystallize` throws on any non-success outcome,
+and its own description is "Learn from successful tasks".
+
+Why it matters: a library that only grows from successes cannot generate a
+competing approach to a job it already does adequately. It extends a library,
+it does not bootstrap one, and it can never produce the rival that would make
+a confidence comparison meaningful. Day one still needs hand-written skills,
+which is worth saying in the docs so nobody plans around it.
+
+Whyzr workaround: we hand-wrote five deliberately substitutable skills so
+there is something to compare.
+
+Suggested fix: state the constraint in the skills documentation.
+
+## 19. Cherry-picking a skill between branches conflicts on the evidence
+
+What happens: cherry-picking a skill improvement from one agent branch to
+another conflicts on the frontmatter. Reproduced: the prose improvement
+auto-merges cleanly and the conflict lands exactly on the `confidence` and
+`usage_count` lines.
+
+Why it matters: this is correct, and we think it is a feature worth
+advertising rather than a rough edge. The skill travels between agents, the
+evidence does not, because that evidence was earned with a different user.
+But it is undocumented, and it is the first thing anyone running multi-branch
+agents will hit, at which point it looks like a bug.
+
+Whyzr handling: none needed. We rely on it.
+
+Suggested fix: document it, and mention stripping stats when promoting a
+skill from one agent to a shared parent.
+
+## 20. The reinforcement primitives are not reachable from the public API
+
+What happens: `package.json` exports only `.` and `./cli`. The main entry
+re-exports `discoverSkills` but not `adjustConfidence`, `loadSkillStats` or
+`saveSkillStats`.
+
+Why it matters: item 16 says supplying an external signal is the
+application's job, but the functions needed to apply that signal cannot be
+imported. `import ... from "@open-gitagent/gitagent/dist/learning/reinforcement.js"`
+fails with ERR_PACKAGE_PATH_NOT_EXPORTED. That leaves two options: resolve a
+path into `dist/` and hope it survives the next release, or reimplement the
+confidence math and let it drift out of sync with the framework's.
+
+Whyzr workaround: we resolve the `dist/` path explicitly, so at least the
+numbers stay the framework's own.
+
+Suggested fix: export the reinforcement primitives from the package entry.
+They are the documented extension point.
+
+## 21. SECURITY: the memory and skill_learner tools shell-inject on a model-chosen string
+
+What happens: the memory tool commits with
+
+    execSync(`git add "${memoryPath}" && git commit -m "${commitMsg.replace(/"/g, '\"')}"`)
+
+(dist/tools/memory.js:120). Only the double quote is escaped. `$(...)`,
+backticks, `;` and `&&` pass through untouched, and `commitMsg` is chosen by
+the model. The same pattern is at skill-learner.js:78 and :341.
+
+Reproduced: a save with the message `journal: puddles $(touch PROOF.txt)`
+created the file, and the resulting commit subject reads `journal: puddles`,
+so the log looks entirely normal afterwards.
+
+Why it matters: it is arbitrary command execution in the host process, with
+that process's environment, reached through a tool most applications
+allow-list precisely because it looks harmless. Any prompt injection that
+influences a commit message becomes code execution. For an agent handling
+untrusted input, and especially for one built for children, this is the
+difference between a sandbox and the appearance of one. Note that a hook
+cannot save you by default: a `pre_tool_use` hook that allow-lists `memory`
+never inspects the message.
+
+Whyzr workaround: our guard hook now inspects the arguments of these tools
+and refuses shell metacharacters, rather than trusting the tool name.
+
+Suggested fix: pass arguments as an array with `execFile`, never build a
+shell string. `git commit -m` takes the message as a single argv entry, so
+no escaping is needed at all.
