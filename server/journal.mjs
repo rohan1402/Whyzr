@@ -1,12 +1,13 @@
 // server/journal.mjs: read a kid's repo for the parent dashboard.
 //
 // Everything here is read-only except the rules editor, which commits inside
-// the kid's own clone (which has no remotes: see repos.mjs invariant 1).
+// the child's own worktree (which has no remotes: see worktrees.mjs
+// invariants 1 and 2, so a parent's edit can never reach GitHub).
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
-import { git, commitParentEdit, restoreOriginal, assertNoRemotes } from "./repos.mjs";
+import { git, commitInWorktree, restoreOriginal, assertNoRemotes } from "./worktrees.mjs";
 import { paths } from "./config.mjs";
 
 const JOURNAL = "memory/MEMORY.md";
@@ -100,7 +101,7 @@ export function saveRules(repoDir, text) {
   assertNoRemotes(repoDir);
   if (typeof text !== "string" || text.length > 60_000) throw new Error("rules text rejected");
   writeFileSync(join(repoDir, "RULES.md"), text);
-  return commitParentEdit(repoDir, "RULES.md", "Edited by parent");
+  return commitInWorktree(repoDir, ["RULES.md"], "Edited by parent");
 }
 
 export function restoreRules(repoDir) {

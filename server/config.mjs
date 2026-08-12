@@ -106,10 +106,12 @@ export const paths = {
   // so children's data can never be pushed to the public GitHub repo and
   // the developer's own origin stays intact.
   agentRepo: () => join(config.dataDir, "agent-repo"),
+  // Session locks live outside every worktree so they cannot dirty git state.
+  locksDir: () => join(config.dataDir, "locks"),
 };
 
 export function ensureDataDirs() {
-  for (const d of [config.dataDir, paths.kidsDir(), join(config.dataDir, "transcripts")]) {
+  for (const d of [config.dataDir, paths.kidsDir(), paths.locksDir(), join(config.dataDir, "transcripts")]) {
     if (!existsSync(d)) mkdirSync(d, { recursive: true });
   }
 }

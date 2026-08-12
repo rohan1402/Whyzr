@@ -14,7 +14,7 @@ import { config, paths } from "./config.mjs";
 import * as registry from "./registry.mjs";
 import * as journal from "./journal.mjs";
 import { listTranscripts, readTranscript } from "./transcripts.mjs";
-import { git } from "./repos.mjs";
+import { git, childBranch } from "./worktrees.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -44,7 +44,7 @@ async function overview() {
     const reg = registry.read();
     data = {
       kids: Object.entries(reg.kids).map(([id, k]) => ({
-        id, nickname: k.nickname, age: k.age, branch: k.branch, usage: k.usage,
+        id, nickname: k.nickname, age: k.age, branch: childBranch(id), usage: k.usage,
         history: journal.repoHistory(paths.kidRepo(id), 60),
       })),
       global: reg.global,

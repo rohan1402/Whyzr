@@ -80,13 +80,16 @@ export function findKidByNickname(nickname) {
   return null;
 }
 
-export function createKid({ nickname, age, branch, pinHash }) {
+// No `branch` field: a child's branch is always child-<id>, derived by
+// worktrees.mjs. Storing it invited the two to disagree, and back when age
+// was a branch they did.
+export function createKid({ nickname, age, band, pinHash }) {
   const id = randomUUID().slice(0, 8);
   return update((reg) => {
     reg.kids[id] = {
       nickname: String(nickname).slice(0, 40),
       age,
-      branch,
+      band,
       pinHash: pinHash || null,
       createdAt: new Date().toISOString(),
       tokenHashes: [],

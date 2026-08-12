@@ -9,11 +9,15 @@
 //   - replies are read by polling q.messages(): gitagent 2.0.2 closes the
 //     public stream after turn one (FEEDBACK item 6)
 //
-// What is new: sessions are keyed by kid, each bound to that kid's own repo
-// on the volume, and transcripts can be captured for testing.
+// What is new: sessions are keyed by kid, each bound to that kid's own
+// WORKTREE on the volume; the child's age is a system-prompt parameter rather
+// than a branch; whatever the session learned is committed to that child's
+// branch when it retires; and transcripts can be captured for testing.
 
 import { config, paths } from "./config.mjs";
-import { git } from "./repos.mjs";
+import { git, commitSession } from "./worktrees.mjs";
+import { voiceSuffix } from "./age.mjs";
+import { scrubWorktree } from "./pseudonymity.mjs";
 import { saveTranscript } from "./transcripts.mjs";
 import { newSessionId } from "./auth.mjs";
 
@@ -91,11 +95,14 @@ function enqueue(kidId, job) {
   return run;
 }
 
-function create(kidId) {
+function create(kidId, profile, nickname) {
   const dir = paths.kidRepo(kidId);
   const s = {
     kidId,
     dir,
+    // Held only to scrub it back OUT of anything the model wrote. It is never
+    // sent to the model, never written to git, and never leaves this process.
+    nickname,
     id: newSessionId(),
     queue: [],
     wake: null,
@@ -118,7 +125,12 @@ function create(kidId) {
       }
     }
   }
-  s.q = query({ prompt: feed(), dir, maxTurns: 400, systemPromptSuffix: dateSuffix() });
+  // Age reaches the model here, as a prompt parameter. It used to be a branch
+  // (age-5 / main / age-12) whose only difference was one file, which meant
+  // three copies of the persona to keep in sync and a checkout on every
+  // birthday. See age.mjs.
+  const suffix = dateSuffix() + (profile ? voiceSuffix(profile) : "");
+  s.q = query({ prompt: feed(), dir, maxTurns: 400, systemPromptSuffix: suffix });
   // Drive the session-length cap from a timer, not from the next message: a
   // child who simply closes the tab used to leave a session open forever,
   // never capped and never journaled.
@@ -157,11 +169,11 @@ export function sessionAgeMs(kidId) {
  * onNewSession fires when this call had to create a session (so the caller
  * can count it against the daily cap).
  */
-export function ask(kidId, text, { onNewSession } = {}) {
+export function ask(kidId, text, { onNewSession, profile, nickname } = {}) {
   return enqueue(kidId, async () => {
     let s = sessions.get(kidId);
     if (!s) {
-      s = create(kidId);
+      s = create(kidId, profile, nickname);
       if (onNewSession) await onNewSession();
     }
     s.userTurns += 1;
@@ -237,6 +249,29 @@ async function retireNow(s, why) {
     journaling.delete(s.kidId);
     clearTimeout(s.capTimer);
     try { s.q.abort?.(); } catch { /* already gone */ }
+
+    // gitagent updates skill confidence with a bare writeFile and never
+    // commits (verified in its task-tracker tool). Left uncommitted, this
+    // session's learning is invisible to `git diff child-a child-b` and is
+    // destroyed the moment a worktree is rebuilt from its branch. A session
+    // is the unit of learning, so the app commits it here, once, after the
+    // agent has stopped writing.
+    // A child can say their own name mid-conversation and the model can copy
+    // it into the journal. Scrub BEFORE the session commit so the name is
+    // never in a committed tree at all.
+    try {
+      const { hits } = scrubWorktree(s.dir, s.nickname);
+      if (hits) console.log(`[whyzr] redacted ${hits} identifying mention(s) for ${s.kidId}`);
+    } catch (err) {
+      console.error(`[whyzr] redaction failed for ${s.kidId}: ${err.message}`);
+    }
+
+    try {
+      const hash = commitSession(s.dir, `${s.id}, ${s.userTurns} turns, ended ${why}`);
+      if (hash) console.log(`[whyzr] committed session learning for ${s.kidId}: ${hash}`);
+    } catch (err) {
+      console.error(`[whyzr] could not commit session learning for ${s.kidId}: ${err.message}`);
+    }
     if (config.saveTranscripts && s.transcript.length) {
       try {
         saveTranscript(s.kidId, s.id, {

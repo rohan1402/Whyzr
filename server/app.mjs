@@ -31,7 +31,8 @@ import * as auth from "./auth.mjs";
 import * as caps from "./caps.mjs";
 import * as sessions from "./sessions.mjs";
 import * as journal from "./journal.mjs";
-import { provisionKidRepo, snapAge, changeAgeBranch, git, deleteKidRepo } from "./repos.mjs";
+import { provisionChild, deleteChild, childBranch, ensureAgentRepo, syncTemplate, rebuildMissingWorktrees, git } from "./worktrees.mjs";
+import { ageProfile } from "./age.mjs";
 import { listTranscripts, readTranscript } from "./transcripts.mjs";
 
 assertServerConfig();
@@ -236,20 +237,21 @@ async function handle(req, res, url) {
       return json(res, 400, { error: "How old are you? Pick a number between 1 and 18." });
     }
 
-    const snap = snapAge(age);
+    const profile = ageProfile(age);
 
     if (existing) {
-      // Age change on an existing kid: carry the journal across branches.
+      // Age change on an existing child. Age is a PARAMETER now, not a
+      // branch: nothing is checked out, nothing is migrated, and the child
+      // keeps their branch with every journal entry and every skill stat on
+      // it. The next session simply speaks in the new voice.
       const kid = registry.getKid(existing);
-      const dir = paths.kidRepo(existing);
-      if (kid.branch !== snap.branch) {
-        changeAgeBranch(dir, kid.branch, snap.branch);
+      if (kid.age !== profile.age) {
         await registry.update((reg) => {
-          reg.kids[existing].branch = snap.branch;
-          reg.kids[existing].age = snap.age;
+          reg.kids[existing].age = profile.age;
+          reg.kids[existing].band = profile.band;
         });
       }
-      return json(res, 200, { ok: true, nickname: kid.nickname, age: snap.age, note: snap.note });
+      return json(res, 200, { ok: true, nickname: kid.nickname, age: profile.age, note: profile.note });
     }
 
     // All validation passed: NOW consume the setup token, atomically, so it
@@ -258,24 +260,25 @@ async function handle(req, res, url) {
       return json(res, 401, { error: "Enter the code first." });
     }
 
-    // Provision the repo BEFORE trusting the registry entry: registering
-    // first and cloning second meant a clone failure left a kid with no repo,
-    // permanently bricking the app while every retry minted another orphan.
+    // Provision the worktree BEFORE trusting the registry entry: registering
+    // first and provisioning second meant a git failure left a kid with no
+    // repo, permanently bricking the app while every retry minted another
+    // orphan.
     const kidId = await registry.createKid({
-      nickname, age: snap.age, branch: snap.branch, pinHash: auth.hashPin(pin),
+      nickname, age: profile.age, band: profile.band, pinHash: auth.hashPin(pin),
     });
     try {
-      provisionKidRepo(kidId, snap.branch);
+      provisionChild(kidId);
     } catch (err) {
       console.error(`[whyzr] provisioning failed for ${kidId}: ${err.message}`);
       await registry.update((reg) => { delete reg.kids[kidId]; });
-      try { deleteKidRepo(kidId); } catch { /* nothing to clean */ }
+      try { deleteChild(kidId); } catch { /* nothing to clean */ }
       addPending(token); // let the tester try again with the same token
       return json(res, 500, { error: "Could not get things ready. Please try again." });
     }
     const bind = token || auth.issueToken();
     await auth.bindToken(kidId, bind);
-    return json(res, 200, { ok: true, nickname: String(nickname).trim(), age: snap.age, note: snap.note },
+    return json(res, 200, { ok: true, nickname: String(nickname).trim(), age: profile.age, note: profile.note },
       { "set-cookie": auth.tokenCookie(bind) });
   }
 
@@ -306,6 +309,8 @@ async function handle(req, res, url) {
     try {
       const out = await sessions.ask(kidId, trimmed, {
         onNewSession: () => caps.noteSessionStart(kidId),
+        profile: ageProfile(registry.getKid(kidId)?.age),
+        nickname: registry.getKid(kidId)?.nickname,
       });
       await caps.addSpend(kidId, out.deltaUsd, out.deltaTokens);
       return json(res, 200, { reply: out.reply, turns: out.turns });
@@ -414,7 +419,7 @@ async function handle(req, res, url) {
     if (pathname === "/api/admin/overview") {
       const reg = registry.read();
       const kids = Object.entries(reg.kids).map(([id, k]) => ({
-        id, nickname: k.nickname, age: k.age, branch: k.branch, usage: k.usage,
+        id, nickname: k.nickname, age: k.age, branch: childBranch(id), usage: k.usage,
         history: journal.repoHistory(paths.kidRepo(id), 60),
       }));
       return json(res, 200, {
@@ -478,9 +483,19 @@ process.on("SIGINT", () => shutdown("SIGINT"));
 // Sessions report spend through the caps module without importing it.
 sessions.setSpendReporter((kidId, usd, tokens) => caps.addSpend(kidId, usd, tokens));
 
+// Boot the agent repo BEFORE accepting a request. ensureAgentRepo clones the
+// source and strips every remote (invariants 1 and 2); syncTemplate brings
+// this deploy's moves and rules to main without ever naming a remote;
+// rebuildMissingWorktrees restores a returning child whose worktree directory
+// did not survive the container but whose branch did (invariant 4).
+ensureAgentRepo();
+syncTemplate();
+rebuildMissingWorktrees();
+
 server.listen(config.port, () => {
   console.log(`Whyzr hosted app on :${config.port}`);
   console.log(`  data dir      : ${config.dataDir}`);
+  console.log(`  agent repo    : ${paths.agentRepo()} (no remotes)`);
   console.log(`  access code   : ${LOCAL_DEV ? "NOT SET (local dev, gate open)" : "set"}`);
   console.log(`  admin         : ${config.adminKey ? "enabled" : "disabled (ADMIN_KEY unset)"}`);
   console.log(`  transcripts   : ${config.saveTranscripts ? "SAVING (testing mode)" : "not saved"}`);

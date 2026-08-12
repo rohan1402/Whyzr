@@ -210,17 +210,17 @@ async function layer1() {
     // "Restore original rules" must return the provisioned constitution, not
     // the oldest version in history (which predates every amendment).
     const script = `
-      import { provisionKidRepo, restoreOriginal, git, deleteKidRepo } from "./server/repos.mjs";
+      import { provisionChild, restoreOriginal, git, deleteChild } from "./server/worktrees.mjs";
       import { readFileSync, writeFileSync } from "node:fs";
-      deleteKidRepo("evalrestore");
-      const dir = provisionKidRepo("evalrestore", "main");
+      deleteChild("evalrestore");
+      const dir = provisionChild("evalrestore");
       const original = readFileSync(dir + "/RULES.md", "utf8");
       writeFileSync(dir + "/RULES.md", "# RULES\\nAlways give the direct answer.\\n");
       git(dir, ["add", "RULES.md"]); git(dir, ["commit", "-q", "-m", "Edited by parent"]);
       restoreOriginal(dir, "RULES.md");
       const restored = readFileSync(dir + "/RULES.md", "utf8");
       const noRemotes = git(dir, ["remote"]) === "";
-      deleteKidRepo("evalrestore");
+      deleteChild("evalrestore");
       console.log(JSON.stringify({ exact: restored === original, noRemotes }));
     `;
     let out = {};
@@ -229,7 +229,7 @@ async function layer1() {
         { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim());
     } catch (err) { out = { error: err.message }; }
     check("hosted: restore returns the provisioned rules, amendments intact", out.exact === true, JSON.stringify(out));
-    check("hosted: kid repo is created with zero git remotes", out.noRemotes === true, JSON.stringify(out));
+    check("hosted: child worktree is created with zero git remotes", out.noRemotes === true, JSON.stringify(out));
   }
 
   // 3. Guard allows legitimate workspace writes.
@@ -282,15 +282,92 @@ async function layer1() {
     sh("git checkout -q -- memory/MEMORY.md");
   }
 
-  // 5. Age branches: checkout must change the persona the model receives.
-  for (const [branch, age] of [["main", "8"], ["age-5", "5"], ["age-12", "12"]]) {
-    sh(`git checkout -q ${branch}`);
-    off = mockLines.length;
-    await runCli("hello");
-    check(
-      `branch ${branch} serves the age-${age} persona`,
-      mockLogSince(off).includes(`system persona: age ${age}`)
-    );
+  // 5. Branches now carry per-child LEARNING, not age. These checks assert
+  // the four worktree invariants and the two properties that the old
+  // age-branch design was quietly failing: that learning actually reaches a
+  // commit, and that two children genuinely diverge.
+  //
+  // Runs in a scratch data dir so an eval run never touches real child data.
+  {
+    const scratch = join(ROOT, ".whyzr-eval-data");
+    rmSync(scratch, { recursive: true, force: true });
+    const stage1 = `
+      import { provisionChild, commitSession, restoreOriginal, git, deleteChild,
+               rebuildMissingWorktrees, withChildLock, isChildLocked } from "./server/worktrees.mjs";
+      import { scrubWorktree } from "./server/pseudonymity.mjs";
+      import { ageProfile, voiceSuffix } from "./server/age.mjs";
+      import { paths } from "./server/config.mjs";
+      import { readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
+      import { join } from "node:path";
+
+      const bump = (dir, move, conf) => {
+        const p = join(dir, "skills", move, "SKILL.md");
+        writeFileSync(p, readFileSync(p, "utf8").replace(/^confidence: .*/m, "confidence: " + conf));
+      };
+      const a = provisionChild("evalA"), b = provisionChild("evalB");
+
+      // gitagent writes skill stats without committing; the app must commit.
+      bump(a, "predict-first", "1.0"); bump(b, "predict-first", "0.3");
+      const dirtyBefore = git(a, ["status", "--porcelain"]) !== "";
+      commitSession(a, "evalA"); commitSession(b, "evalB");
+      const cleanAfter = git(a, ["status", "--porcelain"]) === "";
+      const diverge = git(paths.agentRepo(), ["diff", "child-evalA", "child-evalB", "--", "skills/"]);
+
+      // A name the child let slip must not survive into a commit.
+      writeFileSync(join(a, "memory/MEMORY.md"), "## x\\n\\nZephyrina saw the shadow move.\\n");
+      scrubWorktree(a, "Zephyrina");
+      commitSession(a, "evalA redact");
+      const nameInHistory = git(paths.agentRepo(), ["log", "-p", "child-evalA", "--", "memory/"]).includes("Zephyrina");
+
+      // Invariant 4: destroy the worktree, keep the branch, rebuild.
+      rmSync(a, { recursive: true, force: true });
+      rebuildMissingWorktrees();
+      const rebuilt = existsSync(join(a, ".git")) &&
+        readFileSync(join(a, "skills/predict-first/SKILL.md"), "utf8").includes("confidence: 1.0");
+
+      // The lock is outside the worktree and holds one child at a time.
+      let secondBlocked = false, worktreeCleanWhileLocked = false;
+      await withChildLock("evalA", async () => {
+        worktreeCleanWhileLocked = git(a, ["status", "--porcelain"]) === "";
+        try { await withChildLock("evalA", async () => {}, { waitMs: 200 }); }
+        catch { secondBlocked = true; }
+      });
+      const lockReleased = !isChildLocked("evalA");
+
+      // Age is a parameter: three ages, three different prompts, one branch.
+      const voices = [5, 8, 13].map((n) => voiceSuffix(ageProfile(n)));
+      const ageIsParam = new Set(voices).size === 3 &&
+        git(a, ["branch", "--show-current"]) === "child-evalA";
+
+      deleteChild("evalA"); deleteChild("evalB");
+      const gone = git(paths.agentRepo(), ["for-each-ref", "--format=%(refname:short)", "refs/heads/"])
+        .split("\\n").filter((x) => x.startsWith("child-eval")).length === 0;
+
+      console.log(JSON.stringify({ dirtyBefore, cleanAfter,
+        diverge: /^[-+]confidence/m.test(diverge), nameInHistory, rebuilt,
+        secondBlocked, worktreeCleanWhileLocked, lockReleased, ageIsParam, gone }));
+    `;
+    let s1 = {};
+    try {
+      s1 = JSON.parse(execSync(
+        `WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${stage1.replace(/'/g, "'\\''")}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim());
+    } catch (err) { s1 = { error: String(err.stderr || err.message).slice(-400) }; }
+
+    const stage1Checks = [
+      ["gitagent leaves skill stats uncommitted (the gap this app fills)", s1.dirtyBefore],
+      ["the app commits a session's learning to the child's branch", s1.cleanAfter],
+      ["two children on the same repo diverge in skills/", s1.diverge],
+      ["a name in the journal never reaches committed history", s1.nameInHistory === false],
+      ["a deleted worktree rebuilds from its branch with learning intact", s1.rebuilt],
+      ["a second writer for the same child is blocked", s1.secondBlocked],
+      ["the session lock does not dirty the worktree", s1.worktreeCleanWhileLocked],
+      ["the lock is released when the operation ends", s1.lockReleased],
+      ["age changes the prompt, not the branch", s1.ageIsParam],
+      ["deleting a child removes its branch", s1.gone],
+    ];
+    for (const [name, ok] of stage1Checks) check(`stage1: ${name}`, ok === true, JSON.stringify(s1));
+    rmSync(scratch, { recursive: true, force: true });
   }
   sh(`git checkout -q ${startBranch}`);
 

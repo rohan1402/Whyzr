@@ -12,5 +12,8 @@ node_modules/
 
 # os noise
 .DS_Store
+
+# runtime data: kid worktrees, registry, transcripts. Never committed.
 evals/transcripts/
 .whyzr-data/
+.whyzr-eval-data/

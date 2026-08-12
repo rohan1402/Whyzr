@@ -36,8 +36,13 @@ import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { REPO_ROOT, paths, ensureDataDirs } from "./config.mjs";
 
-const LOCK_TIMEOUT_MS = 120_000;   // a session turn can legitimately take ~90s
-const LOCK_WAIT_MS = 30_000;       // how long a caller waits for the lock
+// A lock is held for ONE operation (a turn, or a wrap-up), not a whole
+// session. Both have a 90s internal deadline, so the stale threshold must sit
+// comfortably above that: at 120s a legitimately slow turn could have its
+// lock stolen and admit a second writer, which is the exact corruption the
+// lock exists to prevent.
+const LOCK_TIMEOUT_MS = 300_000;   // 5 min: > 90s turn + 90s wrap-up + slack
+const LOCK_WAIT_MS = 120_000;      // a caller may wait out one full turn
 const LOCK_POLL_MS = 100;
 
 /** Run git. Args are always an array, never a shell string. */
@@ -140,11 +145,80 @@ export function provisionChild(childId) {
 
   // Marks the state this child started from. "Restore original rules"
   // restores THIS, never the oldest version in history, which would undo
-  // every constitution amendment ever made.
-  try { git(dir, ["tag", "--force", `template-base-${childId}`]); } catch { /* non-fatal */ }
+  // every constitution amendment ever made. Tags are repo-global and the
+  // agent repo is shared, so the tag is namespaced per child.
+  try { git(dir, ["tag", "--force", templateTag(childId)]); } catch { /* non-fatal */ }
 
   assertNoRemotes(dir);
   return dir;
+}
+
+export const templateTag = (childId) => `template-base-${childId}`;
+
+/** The child id owning a worktree, read from its branch. */
+export function childIdOf(dir) {
+  const branch = git(dir, ["branch", "--show-current"]);
+  return branch.startsWith("child-") ? branch.slice("child-".length) : null;
+}
+
+/**
+ * The commit a worktree's template state came from: the per-child tag, or
+ * the fork point from main if the tag is missing (older worktrees). Never
+ * "the first commit touching this file", which would restore a constitution
+ * from before every amendment.
+ */
+export function templateBase(dir) {
+  const childId = childIdOf(dir);
+  if (childId) {
+    try {
+      git(dir, ["rev-parse", "--verify", `${templateTag(childId)}^{commit}`], { stdio: "pipe" });
+      return templateTag(childId);
+    } catch { /* fall through */ }
+  }
+  try {
+    return git(dir, ["merge-base", "HEAD", "main"], { stdio: "pipe" });
+  } catch {
+    return "HEAD";
+  }
+}
+
+// ----------------------------------------------------------- writing to git
+
+/** Stage paths and commit if anything changed. Returns the short hash or null. */
+export function commitInWorktree(dir, addPaths, message) {
+  assertNoRemotes(dir);
+  git(dir, ["add", "--", ...addPaths]);
+  const staged = git(dir, ["diff", "--cached", "--name-only"]);
+  if (!staged) return null;
+  git(dir, ["commit", "--quiet", "-m", message]);
+  return git(dir, ["rev-parse", "--short", "HEAD"]);
+}
+
+/**
+ * THE FIX THAT MAKES THIS PROJECT GIT-NATIVE.
+ *
+ * gitagent's reinforcement learning writes skill stats with writeFile and
+ * never commits (verified: tools/task-tracker.js calls saveSkillStats, which
+ * is a bare write). Left alone, every confidence update is an uncommitted
+ * working-tree change, which means: rebuilding a worktree from its branch
+ * destroys all learning, and `git diff child-a child-b -- skills/` (the
+ * entire thesis of this design) returns empty.
+ *
+ * So the app commits the learning itself, once per session.
+ */
+export function commitLearning(dir, note) {
+  return commitInWorktree(dir, ["skills/"], `learning: ${note}`);
+}
+
+/** Commit whatever the session wrote: journal facts and skill evidence. */
+export function commitSession(dir, note) {
+  return commitInWorktree(dir, ["skills/", "memory/"], `session: ${note}`);
+}
+
+/** Restore a tracked file to the state this child was provisioned with. */
+export function restoreOriginal(dir, relPath) {
+  git(dir, ["checkout", templateBase(dir), "--", relPath]);
+  return commitInWorktree(dir, [relPath], `Restore original ${relPath}`);
 }
 
 export function pruneWorktrees() {
@@ -183,7 +257,10 @@ export function rebuildMissingWorktrees() {
 
 // ------------------------------------------------------------------ locking
 
-const lockPath = (childId) => join(paths.kidRepo(childId), ".whyzr-session.lock");
+// Locks live OUTSIDE the worktree. Inside, the lock file showed up as an
+// untracked change: it dirtied `git status`, could be swept into a commit by
+// any `git add -A`, and made "is this worktree clean" untestable.
+const lockPath = (childId) => join(paths.locksDir(), `${childId}.lock`);
 
 /**
   * Invariant 3. Acquire the per-child lock via O_EXCL, which is atomic: the
@@ -259,7 +336,7 @@ export function deleteChild(childId) {
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   pruneWorktrees();
   try { git(paths.agentRepo(), ["branch", "-D", branch]); } catch { /* may not exist */ }
-  try { git(paths.agentRepo(), ["tag", "-d", `template-base-${childId}`]); } catch { /* may not exist */ }
+  try { git(paths.agentRepo(), ["tag", "-d", templateTag(childId)]); } catch { /* may not exist */ }
   try {
     git(paths.agentRepo(), ["reflog", "expire", "--expire=now", "--all"]);
     git(paths.agentRepo(), ["gc", "--prune=now", "--quiet"]);
