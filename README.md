@@ -425,6 +425,45 @@ best move.
 Seeded children live on `child-seed-*` branches, are **never merged to
 main**, and never share a repo state with a real child.
 
+## What Whyzr keeps, and how to destroy it
+
+A children's product that stores a child's reasoning permanently in a commit
+history owes a straight answer here, so this is the retention policy rather
+than a link to one.
+
+**Kept, per child:** a nickname the parent chooses, an age, a hashed parent
+PIN, the growth journal the tutor writes at the end of each session, which
+reasoning moves worked, and the judge's one-line reason for each verdict.
+
+**Not kept:** real names, and the conversations themselves. Transcript
+capture exists for testing, is off by default (`SAVE_TRANSCRIPTS`), and the
+README claim only stays true because an eval asserts the default.
+
+**Where:** on a branch named `child-<random-id>`, in a repository on the
+server that has had every git remote stripped. Nothing a child or parent does
+can reach this public repo. The nickname-to-id mapping lives in
+`registry.json`, outside every git repo, and the tutor's guard hook cannot
+read it.
+
+**Deletion is a script, not a button.** Git is bad at forgetting: `git branch
+-D` removes a pointer and leaves every object reachable through the reflog
+until garbage collection. Telling a parent "deleted" at that point would be a
+lie, so:
+
+```bash
+scripts/delete-child.sh <child-id>
+```
+
+removes the worktree and its directory, the branch, the per-child tag,
+expires the reflog, garbage collects with `--prune=now`, drops the registry
+row, and then **verifies** none of the seven survived before reporting
+success. The two steps people miss are the tag and the reflog: skip either
+and gc silently keeps everything while the output still looks fine. An eval
+runs the whole script against a throwaway child on every test run.
+
+It is deliberately not a dashboard button, because it destroys months of a
+child's history in one click and cannot be undone.
+
 ## Limitations, honestly
 
 - Behavioral rules are prompt-enforced and eval-verified, but only the

@@ -15,7 +15,8 @@
 //   POST /api/new  /api/bye     retire the session (journal is written)
 //   GET  /parent                parent dashboard (PIN gated)
 //   POST /api/parent/login      exchange PIN for a short-lived parent token
-//   GET  /api/parent/data       journal cards, progress report, rules, history
+//   GET  /api/parent/data       journal, report, rules, history, moves, verdicts
+//   GET  /api/parent/compare    git diff this child against another child
 //   POST /api/parent/rules      save edited rules (commits in kid repo only)
 //   POST /api/parent/restore    restore original rules
 //   GET  /admin                 Rohan's review page (ADMIN_KEY gated)
@@ -33,6 +34,7 @@ import * as sessions from "./sessions.mjs";
 import * as journal from "./journal.mjs";
 import { provisionChild, deleteChild, childBranch, ensureAgentRepo, syncTemplate, rebuildMissingWorktrees, withChildLock, git } from "./worktrees.mjs";
 import { ageProfile } from "./age.mjs";
+import { readMoves, successRate } from "./moves.mjs";
 import { listTranscripts, readTranscript } from "./transcripts.mjs";
 
 assertServerConfig();
@@ -378,6 +380,25 @@ async function handle(req, res, url) {
       rules: journal.readRules(dir),
       history: journal.repoHistory(dir),
       report: journal.progressReport(dir),
+      // Design section 5: "which moves work on them" is a dashboard pane, and
+      // it is read straight out of skills/*/SKILL.md on this child's branch.
+      // No database, no aggregation table: the file IS the record.
+      moves: readMoves(dir)
+        .map((m) => ({
+          name: m.name,
+          confidence: m.confidence,
+          usage: m.usage_count,
+          successes: m.success_count,
+          rate: successRate(m),
+        }))
+        .sort((a, b) => b.rate - a.rate),
+      verdicts: journal.readVerdicts(dir, 40),
+      // Who else this child could be compared against. Seeded children are
+      // deliberately NOT offered: design section 10 forbids mixing them with
+      // a real child, and a parent must never be shown a fictional sibling.
+      compareWith: Object.entries(registry.read().kids)
+        .filter(([id]) => id !== kidId)
+        .map(([id, k]) => ({ id, nickname: k.nickname })),
       // null means "we could not check", which the dashboard must NOT render
       // as a safety guarantee. An unguarded call here also 500'd the whole
       // dashboard whenever the repo was mid-operation.
@@ -395,6 +416,32 @@ async function handle(req, res, url) {
     if (!kidId) return json(res, 401, { error: "unauthorized" });
     const diff = journal.commitDiff(paths.kidRepo(kidId), url.searchParams.get("hash") || "");
     return diff ? json(res, 200, { diff }) : json(res, 404, { error: "not found" });
+  }
+
+  // The sibling comparison, which is the whole thesis in one command:
+  //   git diff child-a child-b -- skills/
+  // Two children of the same tutor, and the diff is what each of them taught
+  // it. Scoped to skills/ on purpose: diffing the whole branch would spill
+  // one child's journal into the other's parent's browser.
+  if (req.method === "GET" && pathname === "/api/parent/compare") {
+    const kidId = parentKid(req, url);
+    if (!kidId) return json(res, 401, { error: "unauthorized" });
+    const otherId = String(url.searchParams.get("with") || "");
+    if (!registry.getKid(otherId) || otherId === kidId) {
+      return json(res, 400, { error: "unknown child" });
+    }
+    try {
+      const diff = git(paths.agentRepo(), [
+        "diff", childBranch(kidId), childBranch(otherId), "--", "skills/",
+      ]);
+      return json(res, 200, {
+        command: `git diff ${childBranch(kidId)} ${childBranch(otherId)} -- skills/`,
+        diff,
+      });
+    } catch (err) {
+      console.error(`[whyzr] compare failed: ${err.message}`);
+      return json(res, 500, { error: "Could not compare just now." });
+    }
   }
 
   if (req.method === "POST" && pathname === "/api/parent/rules") {

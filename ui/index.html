@@ -144,9 +144,17 @@
     <input id="nick" type="text" maxlength="40" autocomplete="off" placeholder="a nickname is perfect">
     <label for="age">How old are you?</label>
     <input id="age" type="number" min="1" max="99" inputmode="numeric" placeholder="7">
+    <!-- Consent, per WHYZR-HANDOFF-3 section 4. A tick box that only says "I
+         am a parent" is not consent to anything, because it does not name
+         what is being agreed to. This one says what is kept and what is not,
+         since that is the whole of the decision being made. -->
     <div class="checkrow">
       <input id="parentOk" type="checkbox">
-      <label for="parentOk" style="margin:0">I am a parent or guardian setting this up for my child.</label>
+      <label for="parentOk" style="margin:0">
+        I am a parent or guardian. I understand Whyzr keeps a nickname, an age
+        and a journal of how my child reasons, that conversations themselves
+        are not stored, and that I can have all of it deleted.
+      </label>
     </div>
     <label for="pin">Parent PIN (4 to 8 digits, for the grown-up's page)</label>
     <input id="pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off">

@@ -84,8 +84,10 @@
     <nav>
       <button data-tab="journal" class="on">Journal</button>
       <button data-tab="report">Progress</button>
+      <button data-tab="moves">What works</button>
       <button data-tab="rules">Rules</button>
       <button data-tab="history">History</button>
+      <button data-tab="data">Your data</button>
     </nav>
 
     <div id="writing" class="banner hidden">
@@ -120,6 +122,33 @@
         </p>
       </div>
     </section>
+
+    <!-- Design section 5: "which moves work on them" is a pane, read straight
+         out of skills/*/SKILL.md on this child's branch. The file is the
+         record; there is no database behind this. -->
+    <section id="tab-moves" class="hidden">
+      <div class="card">
+        <p class="muted" style="margin-bottom:10px">
+          Whyzr has five ways of asking a question. It keeps score of which ones
+          get <b>your child</b> to the answer, and tries the best one next time.
+          This is kept separately for every child, so it is about them and
+          nobody else.
+        </p>
+        <div id="moves"></div>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3 style="margin:0 0 8px">Why each score moved</h3>
+        <p class="muted" style="margin-bottom:10px">
+          Graded by a second, separate AI that never sees the conversation, only
+          the question and your child's final answer. Their answers are not
+          recorded here.
+        </p>
+        <div id="verdicts"></div>
+      </div>
+      <div class="card" id="compareCard" style="margin-top:14px"></div>
+    </section>
+
+    <section id="tab-data" class="hidden"></section>
 
     <section id="tab-history" class="hidden">
       <div class="card">
@@ -164,7 +193,7 @@
     b.addEventListener("click", () => {
       document.querySelectorAll("nav button").forEach((x) => x.classList.remove("on"));
       b.classList.add("on");
-      ["journal", "report", "rules", "history"].forEach((t) =>
+      ["journal", "report", "moves", "rules", "history", "data"].forEach((t) =>
         $("tab-" + t).classList.toggle("hidden", t !== b.dataset.tab));
     });
   });
@@ -198,6 +227,10 @@
     renderJournal(DATA.cards);
     $("report").textContent = DATA.report || "";
     renderHistory(DATA.history);
+    renderMoves(DATA.moves);
+    renderVerdicts(DATA.verdicts);
+    renderCompare(DATA.compareWith);
+    renderDataPane();
 
     // Only overwrite the editor when the parent has not started typing:
     // the background poll used to wipe an in-progress edit every 4 seconds.
@@ -213,6 +246,108 @@
       : DATA.remotes.length
         ? `Warning: this copy has remotes (${DATA.remotes.join(", ")})`
         : "Verified: this copy has no git remotes, so nothing here can be pushed anywhere.";
+  }
+
+  // Plain language, because a parent should not have to learn what a smoothed
+  // success rate is to read their own child's page. The raw numbers are shown
+  // next to it so nothing is being hidden behind the friendly sentence.
+  function readingOf(m) {
+    if (!m.usage) return "not tried yet";
+    if (m.usage < 3) return "too early to say";
+    if (m.rate >= 0.7) return "works well for them";
+    if (m.rate >= 0.45) return "mixed";
+    return "rarely gets them there";
+  }
+
+  function renderMoves(moves) {
+    const el = $("moves");
+    if (!moves || !moves.length) {
+      el.innerHTML = `<p class="muted">No sessions yet, so there is nothing to compare.</p>`;
+      return;
+    }
+    el.innerHTML = moves.map((m) => `
+      <div style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+        <div>
+          <b>${esc(m.name)}</b>
+          <div class="muted" style="font-size:.85rem">${esc(readingOf(m))}</div>
+        </div>
+        <div class="muted" style="text-align:right;font-size:.85rem;white-space:nowrap">
+          ${m.successes} of ${m.usage} reached the answer<br>
+          <span title="gitagent's own confidence field">confidence ${m.confidence}</span>
+        </div>
+      </div>`).join("");
+  }
+
+  function renderVerdicts(list) {
+    const el = $("verdicts");
+    if (!list || !list.length) {
+      el.innerHTML = `<p class="muted">Nothing graded yet.</p>`;
+      return;
+    }
+    el.innerHTML = list.map((v) => `
+      <div style="padding:8px 0;border-bottom:1px solid rgba(0,0,0,.06)">
+        <div style="font-size:.9rem"><b>${esc(v.verdict)}</b> <span class="muted">${esc(v.date)} &middot; ${esc(v.move)}</span></div>
+        <div style="font-size:.9rem">${esc(v.question || "")}</div>
+        <div class="muted" style="font-size:.85rem">${esc(v.reason || "")}</div>
+      </div>`).join("");
+  }
+
+  // The sibling diff, which is the product's central claim made checkable.
+  // Only real children are offered: the seeded fictional children exist for
+  // the demo and must never be shown to a parent as a comparison.
+  function renderCompare(others) {
+    const el = $("compareCard");
+    if (!others || !others.length) {
+      el.innerHTML = `<h3 style="margin:0 0 8px">Compare with a sibling</h3>
+        <p class="muted">Set up a second child on this Whyzr and this becomes a
+        <code>git diff</code> between the two: same tutor, and the difference is
+        what each of them taught it.</p>`;
+      return;
+    }
+    el.innerHTML = `<h3 style="margin:0 0 8px">Compare with a sibling</h3>` +
+      others.map((o) => `<button data-cmp="${esc(o.id)}">Compare with ${esc(o.nickname)}</button> `).join("") +
+      `<pre id="cmpOut" class="hidden" style="margin-top:12px"></pre>`;
+    el.querySelectorAll("[data-cmp]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const r = await api("/api/parent/compare?with=" + encodeURIComponent(b.dataset.cmp));
+        const out = $("cmpOut");
+        out.classList.remove("hidden");
+        out.textContent = r.error ? r.error
+          : `$ ${r.command}\n\n${r.diff || "No difference yet: they have not diverged."}`;
+      });
+    });
+  }
+
+  // Consent and retention, per WHYZR-HANDOFF-3 section 4. A parent should be
+  // able to find out what is kept and how to destroy it without reading the
+  // README, and the honest answer includes that git resists deletion.
+  function renderDataPane() {
+    $("tab-data").innerHTML = `
+      <div class="card">
+        <h3 style="margin:0 0 8px">What Whyzr keeps</h3>
+        <ul class="muted" style="margin:0;padding-left:18px;line-height:1.7">
+          <li>A nickname you chose, your child's age, and a hashed PIN. No real name is ever asked for.</li>
+          <li>The growth journal your child's tutor writes at the end of each session.</li>
+          <li>Which questioning styles worked, and the reason each score moved.</li>
+          <li>Conversations themselves are <b>not</b> stored unless testing mode is on, and it is off by default.</li>
+        </ul>
+      </div>
+      <div class="card" style="margin-top:14px">
+        <h3 style="margin:0 0 8px">Deleting it</h3>
+        <p class="muted">
+          Everything is kept in a git history, and git is honest about being bad
+          at forgetting: deleting a branch removes a pointer, not the data. So
+          deletion here runs the full sequence, removing the branch, the tag,
+          the reflog entries and then garbage collecting the objects, and
+          verifies afterwards that nothing is left.
+        </p>
+        <p class="muted">Ask the person who sent you this link to run:</p>
+        <pre>scripts/delete-child.sh &lt;child-id&gt;</pre>
+        <p class="muted">
+          It is deliberately not a button on this page: it destroys months of a
+          child's history in one click and cannot be undone.
+        </p>
+      </div>`;
   }
 
   function renderJournal(cards) {

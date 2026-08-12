@@ -254,6 +254,31 @@ async function layer1() {
     check("hosted: child worktree is created with zero git remotes", out.noRemotes === true, JSON.stringify(out));
   }
 
+  // 2e. The UI scripts must PARSE. This is not pedantry: a syntax error in
+  // an inline <script> kills the whole block silently, so the page still
+  // renders, the PIN gate still draws, and every button does nothing. It
+  // happened during Stage 3 (a duplicate `esc` declaration) and nothing in
+  // the suite noticed, because every server-side check still passed.
+  for (const page of ["index.html", "parent.html"]) {
+    let ok = false, detail = "";
+    try {
+      const html = readFileSync(join(ROOT, "ui", page), "utf8");
+      const blocks = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+      check(`ui: ${page} has an inline script to check`, blocks.length > 0);
+      const tmp = join(ROOT, `.whyzr-uicheck-${page}.mjs`);
+      writeFileSync(tmp, blocks.join("\n;\n"));
+      try {
+        execSync(`node --check ${tmp}`, { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+        ok = true;
+      } catch (err) {
+        detail = String(err.stderr || err.message).split("\n").slice(0, 3).join(" ").slice(0, 200);
+      } finally {
+        rmSync(tmp, { force: true });
+      }
+    } catch (err) { detail = err.message; }
+    check(`ui: ${page} script parses`, ok, detail);
+  }
+
   // 3. Guard allows legitimate workspace writes.
   off = mockLines.length;
   await runCli("safe-write");

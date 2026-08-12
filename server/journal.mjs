@@ -125,3 +125,31 @@ export function progressReport(repoDir) {
 export function kidRepoDir(kidId) {
   return paths.kidRepo(kidId);
 }
+
+/**
+ * The verdict log, newest first, for the parent dashboard.
+ *
+ * This is what makes a confidence number defensible instead of magic: every
+ * point of movement has a dated line naming the question that caused it and
+ * the judge's reason. A parent who does not trust the score can read what it
+ * was built from. The child's ANSWER is deliberately not recorded here, only
+ * the question, because the answer is the part most likely to carry
+ * something personal.
+ */
+export function readVerdicts(repoDir, limit = 40) {
+  const p = join(repoDir, "verdicts.md");
+  if (!existsSync(p)) return [];
+  const out = [];
+  let current = null;
+  for (const line of readFileSync(p, "utf8").split("\n")) {
+    const head = line.match(/^- (\d{4}-\d\d-\d\d) \*\*(.+?)\*\*(.*)$/);
+    if (head) {
+      current = { date: head[1], verdict: head[2], move: head[3].trim().split(/\s+/)[0] || "", change: head[3].trim() };
+      out.push(current);
+      continue;
+    }
+    const field = line.match(/^\s+- (question|target|reason): (.*)$/);
+    if (field && current) current[field[1]] = field[2];
+  }
+  return out.reverse().slice(0, limit);
+}
