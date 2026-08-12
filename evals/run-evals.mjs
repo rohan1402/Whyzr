@@ -547,6 +547,104 @@ async function layer1() {
     for (const [name, ok] of judgeChecks) check(`judge: ${name}`, ok === true, JSON.stringify(s3));
     rmSync(scratch, { recursive: true, force: true });
   }
+
+  // 5d. Stage 2 requirements from HANDOFF section 6: lock correctness under
+  // genuinely concurrent same-child sessions, stats stripping on promotion
+  // (fix 3), and the deletion script.
+  {
+    const scratch = join(ROOT, ".whyzr-eval-data");
+    rmSync(scratch, { recursive: true, force: true });
+
+    // The lock test spawns TWO OS PROCESSES. An in-process test would be
+    // proving the promise chain, not the lock, and the whole reason the lock
+    // exists is the case the promise chain cannot reach: a redeploy running
+    // two instances against one volume. Without the lock these two race on
+    // .git/index.lock and lose commits.
+    const worker = `
+      import { provisionChild, withChildLock, commitInWorktree } from "./server/worktrees.mjs";
+      import { writeFileSync } from "node:fs";
+      import { join } from "node:path";
+      const tag = process.argv[1];
+      const dir = provisionChild("evalrace");
+      for (let i = 0; i < 6; i++) {
+        await withChildLock("evalrace", async () => {
+          writeFileSync(join(dir, "race.md"), tag + "-" + i + "-" + Date.now() + "\\n");
+          commitInWorktree(dir, ["race.md"], "race " + tag + " " + i);
+        }, { waitMs: 60000 });
+      }
+    `;
+    let race = {};
+    try {
+      // Provision once up front so both workers start from a real worktree.
+      execSync(`WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e 'import("./server/worktrees.mjs").then(m => m.provisionChild("evalrace"))'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+      const one = `WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${worker.replace(/'/g, "'\\''")}'`;
+      execSync(`${one} A & ${one} B & wait`, { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: "/bin/bash" });
+      const raw = execSync(
+        `WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '` +
+        `import { git } from "./server/worktrees.mjs"; import { paths } from "./server/config.mjs";` +
+        `const log = git(paths.kidRepo("evalrace"), ["log", "--oneline"]).split("\\n");` +
+        `const fsck = git(paths.agentRepo(), ["fsck", "--no-progress"], { stdio: "pipe" });` +
+        `console.log(JSON.stringify({ commits: log.filter((l) => l.includes("race ")).length,` +
+        ` clean: git(paths.kidRepo("evalrace"), ["status", "--porcelain"]) === "", dangling: /dangling commit/.test(fsck) }));'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim();
+      race = JSON.parse(raw.split("\n").filter((l) => l.startsWith("{")).pop());
+    } catch (err) { race = { error: String(err.stderr || err.message).slice(-300) }; }
+
+    check("stage2: 12 commits from 2 concurrent processes all landed",
+      race.commits === 12, JSON.stringify(race));
+    check("stage2: concurrent writers left the worktree clean",
+      race.clean === true, JSON.stringify(race));
+    check("stage2: concurrent writers produced no dangling commits",
+      race.dangling === false, JSON.stringify(race));
+
+    // Fix 3: promotion carries the move, never the evidence.
+    const promo = `
+      import { stripStats } from "./scripts/promote-move.mjs";
+      const withEvidence = [
+        "---", "name: analogy-bridge", "description: map the unknown onto the known",
+        "confidence: 0.4", "usage_count: 12", "success_count: 3", "failure_count: 9",
+        "negative_examples:", "  - lost her on the sky question", "  - argued about the analogy",
+        "---", "", "# Analogy bridge", "", "Ask what it is like.", "",
+      ].join("\\n");
+      const out = stripStats(withEvidence);
+      console.log(JSON.stringify({
+        confidenceReset: /^confidence: 1\\.0$/m.test(out),
+        usageReset: /^usage_count: 0$/m.test(out),
+        successReset: /^success_count: 0$/m.test(out),
+        failureReset: /^failure_count: 0$/m.test(out),
+        negativesDropped: !out.includes("lost her on the sky question") && !out.includes("argued about"),
+        moveKept: out.includes("# Analogy bridge") && out.includes("Ask what it is like.")
+          && out.includes("description: map the unknown onto the known"),
+      }));
+    `;
+    let p3 = {};
+    try {
+      p3 = JSON.parse(execSync(`WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${promo.replace(/'/g, "'\\''")}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim().split("\n").filter((l) => l.startsWith("{")).pop());
+    } catch (err) { p3 = { error: String(err.stderr || err.message).slice(-300) }; }
+
+    for (const [name, ok] of [
+      ["fix 3: confidence resets on promotion", p3.confidenceReset],
+      ["fix 3: all three counts reset on promotion", p3.usageReset && p3.successReset && p3.failureReset],
+      ["fix 3: one child's negative examples never reach main", p3.negativesDropped],
+      ["fix 3: the move itself survives promotion", p3.moveKept],
+    ]) check(`stage2: ${name}`, ok === true, JSON.stringify(p3));
+
+    // The deletion script, run for real against a throwaway child. HANDOFF
+    // section 4 asks for it to be proven once, not merely written.
+    let del = { ok: false, out: "" };
+    try {
+      execSync(`WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e 'import("./server/worktrees.mjs").then(m => m.provisionChild("evaldelete"))'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+      del.out = execSync(`WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} bash scripts/delete-child.sh evaldelete --yes`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+      del.ok = del.out.includes("Verified: nothing for evaldelete remains");
+    } catch (err) { del.out = String(err.stdout || "") + String(err.stderr || ""); }
+    check("stage2: the deletion script removes a child and verifies it", del.ok === true, del.out.slice(-300));
+
+    rmSync(scratch, { recursive: true, force: true });
+  }
   sh(`git checkout -q ${startBranch}`);
 
   const stray = sh("git status --porcelain");
