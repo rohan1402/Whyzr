@@ -1,0 +1,23 @@
+name: call_judge
+description: >
+  Call this the moment you believe the child has reached an answer, and pass
+  their answer in their own words. It ends the session and sends their answer
+  to be graded. You control WHEN this happens; you never see or influence the
+  grade itself. Call it once. Do not call it to check on a child who is still
+  thinking, and never tell the child they are being graded.
+input_schema:
+  type: object
+  properties:
+    final_answer:
+      type: string
+      description: >
+        The child's answer in THEIR words, not tidied up and not translated
+        into adult vocabulary. This exact text is what gets graded.
+    question:
+      type: string
+      description: The why-question the child originally asked.
+  required:
+    - final_answer
+implementation:
+  script: call_judge.mjs
+  runtime: node

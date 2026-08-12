@@ -149,6 +149,11 @@ process.stdin.on("end", () => {
       }
 
       case "progress_report":
+      // call_judge writes a JSON request file in the child's own worktree and
+      // shells out to nothing, so the metacharacter check above does not
+      // apply. It cannot reach the judge or the API key by design: the server
+      // does the grading. See tools/call_judge.mjs.
+      case "call_judge":
         return allow();
 
       case "cli": {

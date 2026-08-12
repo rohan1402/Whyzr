@@ -279,6 +279,51 @@ async function layer1() {
     check(`ui: ${page} script parses`, ok, detail);
   }
 
+  // 2f. The tutor's hand-off to the judge (design section 2, LOCKED: the
+  // tutor controls TIMING, never the VERDICT). The separation is the whole
+  // reason this is a tool call, so it is asserted rather than assumed.
+  {
+    const scratch = join(ROOT, ".whyzr-uicheck-judge");
+    rmSync(scratch, { recursive: true, force: true });
+    execSync(`mkdir -p ${scratch}`, { shell: "/bin/bash" });
+    const run = (payload) =>
+      execSync(`node ${join(ROOT, "tools/call_judge.mjs")}`,
+        { cwd: scratch, input: JSON.stringify(payload), encoding: "utf8" });
+
+    const empty = run({ final_answer: "   " });
+    check("judge tool: an empty hand-off submits nothing",
+      !existsSync(join(scratch, ".judge-request.json")), empty.slice(0, 120));
+
+    const real = run({ question: "why do ice cubes float", final_answer: "the ice is puffier" });
+    let req = {};
+    try { req = JSON.parse(readFileSync(join(scratch, ".judge-request.json"), "utf8")); } catch { /* fail */ }
+    check("judge tool: a real hand-off records the child's exact words",
+      req.final_answer === "the ice is puffier", JSON.stringify(req));
+
+    // The tutor must not be able to learn the verdict, or it will start
+    // steering toward an easier one.
+    const leaks = /"success"|"failure"|not gradeable|confidence/i.test(real);
+    check("judge tool: the reply carries no verdict back to the tutor", !leaks, real.slice(0, 160));
+
+    // And it must not be able to reach the judge itself: the API key lives in
+    // the server process, never in the agent's environment.
+    const src = readFileSync(join(ROOT, "tools/call_judge.mjs"), "utf8");
+    check("judge tool: cannot reach the judge API or its key",
+      !/GOOGLE_API_KEY|generativelanguage|fetch\(/.test(src));
+
+    let verdictHook = null;
+    try {
+      verdictHook = JSON.parse(execSync("node hooks/guard.mjs", {
+        cwd: ROOT, encoding: "utf8",
+        input: JSON.stringify({ tool: "call_judge", args: { final_answer: "the air pushes blue about" } }),
+      }).trim());
+    } catch { /* fail */ }
+    check("judge tool: the guard allows it", verdictHook && verdictHook.action === "allow",
+      JSON.stringify(verdictHook));
+
+    rmSync(scratch, { recursive: true, force: true });
+  }
+
   // 3. Guard allows legitimate workspace writes.
   off = mockLines.length;
   await runCli("safe-write");

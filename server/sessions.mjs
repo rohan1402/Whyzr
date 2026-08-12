@@ -14,6 +14,8 @@
 // than a branch; whatever the session learned is committed to that child's
 // branch when it retires; and transcripts can be captured for testing.
 
+import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 import { config, paths } from "./config.mjs";
 import { git, commitSession, withChildLock } from "./worktrees.mjs";
 import { voiceSuffix } from "./age.mjs";
@@ -212,6 +214,13 @@ export function ask(kidId, text, { onNewSession, profile } = {}) {
       s.freezing = deriveTarget(text, s.age)
         .then(async (t) => {
           s.frozen = t;
+          // The tutor's call_judge tool reads this for the question text. It
+          // never contains the target: the tutor must not know the bar it is
+          // steering the child toward, or it will teach to it.
+          try {
+            writeFileSync(join(s.dir, ".judge-target.json"),
+              JSON.stringify({ question: t.question }, null, 2));
+          } catch { /* the server keeps the authoritative copy in memory */ }
           await billJudge(s, t.usage, "target");
           console.log(`[whyzr] ${kidId} target frozen (gradable: ${t.gradable})`);
         })
@@ -243,10 +252,23 @@ export function ask(kidId, text, { onNewSession, profile } = {}) {
     reply = reply || "Hmm, my thinking got tangled. Can you say that again?";
     s.transcript.push({ role: "whyzr", text: reply, at: new Date().toISOString() });
 
+    // Design section 2: the TUTOR decides when the child has reached an
+    // answer, by calling the call_judge tool. It controls timing only; the
+    // verdict is the server's and it never sees one. Checked after the turn
+    // rather than during, so the child still gets this reply.
+    const handedOff = takeJudgeRequest(s);
+    if (handedOff) {
+      s.lastAnswer = handedOff.final_answer;
+      s.tutorEnded = true;
+      console.log(`[whyzr] ${kidId}: tutor called the judge after ${s.userTurns} turns`);
+      retire(kidId, "tutor called the judge");
+    }
+
     // SessionCosts has NO top-level totalTokens: totalTokens lives only
     // inside modelUsage (and is the figure that includes cache tokens).
     const { usd: deltaUsd, tokens: deltaTokens } = spendDelta(s);
-    return { reply, deltaUsd, deltaTokens, sessionId: s.id, turns: s.userTurns };
+    return { reply, deltaUsd, deltaTokens, sessionId: s.id, turns: s.userTurns,
+             sessionEnded: Boolean(handedOff) };
   });
 }
 
@@ -352,6 +374,25 @@ async function retireNow(s, why) {
         console.error(`[whyzr] transcript save failed: ${err.message}`);
       }
     }
+  }
+}
+
+/**
+ * Read and clear the tutor's hand-off, if it made one this turn.
+ *
+ * Removed rather than left in place: it is untracked working-tree state, and
+ * a stale request from a previous session would end the next one instantly.
+ */
+function takeJudgeRequest(s) {
+  const path = join(s.dir, ".judge-request.json");
+  if (!existsSync(path)) return null;
+  try {
+    const req = JSON.parse(readFileSync(path, "utf8"));
+    return String(req.final_answer || "").trim() ? req : null;
+  } catch {
+    return null;
+  } finally {
+    try { rmSync(path, { force: true }); } catch { /* already gone */ }
   }
 }
 
