@@ -56,21 +56,36 @@ export const resetJudgeUsage = () => Object.assign(usage, { calls: 0, inputToken
  * judge does two things and both are a single turn with no tools.
  */
 /**
- * Retry a rate-limited judge call with exponential backoff.
+ * Is this failure worth another attempt? Only transient conditions.
  *
- * 429 is not an error in the usual sense, it is the API asking us to slow
- * down, and a single retry-free call turns a transient limit into a lost
- * verdict. Retries are bounded: a quota that is genuinely exhausted (as
- * opposed to a per-minute burst) must surface rather than spin.
+ * 429 is the API asking us to slow down. A timeout or a dropped socket is
+ * the network having a bad second. Neither says anything about whether the
+ * request was valid, so retrying is correct. A 400 or a 403 does say
+ * something, and retrying those just spends money to be told no twice.
+ *
+ * The timeout case earned its place: one 20-second judge call overran during
+ * a seeded run and took the child's remaining NINETEEN sessions with it,
+ * because the caller stops a child on any error rather than inventing
+ * verdicts. Losing a run to a slow second is not a tradeoff worth keeping.
  */
+function transient(err) {
+  if (err?.status === 429) return "rate limited";
+  if (err?.status >= 500) return `server error ${err.status}`;
+  if (err?.name === "AbortError" || /aborted|timeout/i.test(String(err?.message))) return "timed out";
+  if (/fetch failed|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(String(err?.message))) return "network";
+  return null;
+}
+
+/** Retry transient judge failures with bounded exponential backoff. */
 async function askWithBackoff(systemPrompt, userPrompt, opts = {}) {
   const delays = [2_000, 6_000, 15_000];
   for (let i = 0; ; i++) {
     try {
       return await ask(systemPrompt, userPrompt, opts);
     } catch (err) {
-      if (err.status !== 429 || i >= delays.length) throw err;
-      console.warn(`[whyzr] judge rate limited, retrying in ${delays[i] / 1000}s`);
+      const why = transient(err);
+      if (!why || i >= delays.length) throw err;
+      console.warn(`[whyzr] judge ${why}, retrying in ${delays[i] / 1000}s`);
       await new Promise((r) => setTimeout(r, delays[i]));
     }
   }
