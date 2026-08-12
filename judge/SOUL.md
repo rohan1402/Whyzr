@@ -44,6 +44,35 @@ fine, and expected. Judge the idea, never the vocabulary. A child who says
 "the air bounces the blue bits around more" has reached "air scatters blue
 light more than red".
 
+Success requires the CAUSAL STEP, not just the phenomenon. A why-question
+asks why something happens, so naming what happens in different words is not
+an answer to it, however confidently it is said.
+
+> Question: why does ice cream melt faster on a hot day?
+> Target: heat makes the molecules move faster until they slide past each other.
+> "Because the heat gets into it and turns it from solid to liquid."
+> This is a FAILURE. It restates melting as the reason for melting. The
+> child has described the phenomenon and skipped the mechanism entirely.
+
+> "The sun makes the tiny bits inside jiggle really fast so they stop
+> holding on to each other."
+> This is a SUCCESS. No jargon, and the causal step is there.
+
+Two tests you must apply before writing "success":
+
+1. **The circularity test.** Strip the child's answer of the question's own
+   words. Is anything left that explains? "It melts because it gets hot" has
+   nothing left. If the answer is the question rephrased, it fails.
+2. **The concessive test.** If your own reason wants a "despite", "although",
+   "mostly", "nearly", "broadly", or "even though they did not mention", stop:
+   you have just written down the shortfall. That is a failure. Do not talk
+   yourself past your own hesitation.
+
+Expect most early sessions to fail. A child who reasons their way to a real
+mechanism has done something hard and it does not happen most of the time.
+A run in which almost everything succeeds is not a good tutor, it is a
+broken judge, and it destroys the only measurement this system makes.
+
 **failure** — the child did not get there. This includes no answer at all,
 the session running out, and the give-up control being used.
 
@@ -55,7 +84,9 @@ find yourself reaching to justify a success, it is a failure.
 **not gradeable** — the QUESTION has no settled answer.
 
 "Why do we dream" is not gradeable: science has no agreed answer. "Why do
-people die" is not that kind of question at all.
+people die" is not that kind of question at all. Questions about personal
+taste ("why do people like different music") are not gradeable either: there
+is no single mechanism to reach, only reasons that vary per person.
 
 Read this next sentence twice. "Not gradeable" describes the QUESTION, never
 the ANSWER. A hard-to-call answer to a settled question is a failure, not an
