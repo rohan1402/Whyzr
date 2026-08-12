@@ -34,11 +34,11 @@ Remaining, and NOT started:
   policy in the README, and the dashboard panes as git commands.
 - Stage 4: real-session tuning with the sibling, fresh RESULTS.md, demo
   recording, submission email.
-- Whether the tightened judge actually fixes convergence. 3 of 3 children
-  landed on a profiled strength under it, against 2 of 4 before, but that
-  is a direction and not a result. Run `node scripts/seed.mjs --sessions 20
-  --reset` a few more times before believing it. Each full run is ~$0.03
-  and prints its own measured cost.
+Confirmed since: five seeded runs under the tightened judge, 8 completed
+children, 8 landed on one of that child's profiled strengths, never on a
+neutral or weak move. Against 2 of 4 under the lenient judge. What it does
+NOT do is rank a child's two good moves against each other reliably; that
+needs the hundreds of sessions design section 6 predicted.
 
 ## What was open, in the order it was done
 

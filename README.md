@@ -379,39 +379,48 @@ Calibrated before re-seeding, 4 of 4: both circular answers fail, and both
 genuinely correct childlike answers still pass, so it tightens without
 simply failing everything.
 
-The full run under the tightened judge, which is the data committed to the
-seeded branches now:
+Then the whole thing was run five more times, because one run had already
+proved it could lie. Every completed child, every run, under the tightened
+judge:
 
-| | Nova, 11 | Pip, 7 |
+| Run | Nova, 11 (predict-first, observe-recall) | Pip, 7 (analogy-bridge, flip-it) |
 |---|---|---|
-| Profiled strengths | predict-first, observe-recall | analogy-bridge, flip-it |
-| Landed on | `predict-first` 12/13 | `flip-it` 8/14 |
-| A profiled strength? | yes | yes |
-| Failure rate on graded sessions | 27% | 55% |
+| C | `observe-recall` 13/13 | (credits ran out) |
+| D | `predict-first` 12/13 | `flip-it` 8/14 |
+| E | `predict-first` 12/13 | `analogy-bridge` 13/14 |
+| F | (judge call timed out) | `analogy-bridge` 9/12 |
+| G | `observe-recall` 12/13 | `analogy-bridge` 12/14 |
 
-The failure rates are the point. Before the tightening one child ran at 11%
-failure, which is the "almost no failures" the design warns about. At 27%
-and 55% the judge is producing signal instead of applause, and the moves
-have something to separate on.
+**8 completed children, 8 landed on one of that child's two profiled
+strengths. Not once on a neutral or a weak move.** Against 2 of 4 under the
+lenient judge.
 
-Across all four seeded runs, counting each completed child once: **2 of 4
-children landed on a profiled strength under the lenient judge, and 3 of 3
-under the tightened one.** Encouraging, and still a small enough sample that
-it should be read as a direction rather than a result.
+Note that neither child converges on the *same* strength every time: Nova
+alternates between predict-first and observe-recall, Pip between flip-it and
+analogy-bridge. That is the honest shape of the result. The system reliably
+finds *a* move that works for a child, and does not reliably rank that
+child's two good moves against each other. Separating those two would need
+the hundreds of sessions design section 6 already said it would.
+
+The failure rates are what changed. Before the tightening one child ran at
+11% failure, the "almost no failures" the design warns about. Afterwards
+they run at 27% and 55%: the judge produces signal instead of applause, and
+the moves finally have something to separate on.
 
 The judge now rejects the exact pattern it used to accept: *"recognized that
 heat does something to the dough but failed to identify the mechanism of
 expanding gas bubbles."*
 
-**One thing this run exposes that is worth stating.** Pip's winning move,
-`flip-it`, has a confidence of **0.09**. gitagent's own `isSkillFlagged`
-calls anything below 0.4 a skill in trouble, so by that measure it is the
-worst move in the library. By smoothed success rate it is the best move Pip
-has. Both are correct about different things: confidence is a decaying
-penalty counter that remembers his six failures, and the success rate says
-he still reaches the answer with it more often than with anything else.
-Selecting on confidence would have thrown away Pip's best move. This is
-fix 1 earning its place, visible in one number.
+**One number from these runs is worth the whole of fix 1.** In run D, Pip's
+winning move, `flip-it`, ended at a confidence of **0.09** with 8 successes
+in 14. gitagent's own `isSkillFlagged` calls anything below 0.4 a skill in
+trouble, so by that measure it was the worst move in the library. By
+smoothed success rate it was the best move Pip had. Both are correct about
+different things: confidence is a decaying penalty counter that still
+remembers his six failures, and the ratio says he reaches the answer with it
+more often than with anything else. An application selecting on confidence,
+which is the obvious reading of the field, would have discarded that child's
+best move.
 
 Seeded children live on `child-seed-*` branches, are **never merged to
 main**, and never share a repo state with a real child.
