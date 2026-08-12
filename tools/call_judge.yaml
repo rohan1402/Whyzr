@@ -1,10 +1,13 @@
 name: call_judge
 description: >
-  Call this the moment you believe the child has reached an answer, and pass
-  their answer in their own words. It ends the session and sends their answer
-  to be graded. You control WHEN this happens; you never see or influence the
-  grade itself. Call it once. Do not call it to check on a child who is still
-  thinking, and never tell the child they are being graded.
+  ENDS THE CONVERSATION IMMEDIATELY. The child cannot reply after this. Call
+  it only once the child has given a real answer in their own words, and pass
+  those words. NEVER call it in the same reply as a question to the child:
+  if you are still asking, you are not finished, and calling it hangs up on a
+  child who was about to answer. Never call it out of habit at the end of a
+  turn. A session ending with no answer is a normal outcome; simply do not
+  call it. You control WHEN; you never see the grade, and you must never tell
+  the child they are being graded.
 input_schema:
   type: object
   properties:

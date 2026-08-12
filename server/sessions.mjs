@@ -382,18 +382,81 @@ async function retireNow(s, why) {
  *
  * Removed rather than left in place: it is untracked working-tree state, and
  * a stale request from a previous session would end the next one instantly.
+ *
+ * THIS IS VALIDATED, and the validation is not paranoia. On the first real
+ * session after the tool shipped, the tutor called it immediately after its
+ * OWN opening question, before the child had said anything at all. That
+ * ended the session mid-conversation, dropped the child into a fresh one
+ * mid-thought, and recorded a FAILURE against the move for a child who was
+ * never given a chance to answer. The tool refused empty answers; the tutor
+ * passed a non-empty one, so the check sailed past.
+ *
+ * The tutor controls timing, which means it can get timing wrong, and a
+ * wrong call here corrupts the only measurement the product makes. So the
+ * server decides whether a hand-off is plausible, and the model does not get
+ * a vote:
+ *
+ *   1. the child must have actually answered something (>= 2 of their turns:
+ *      the question, then at least one attempt at it)
+ *   2. the submitted answer must resemble something the child SAID. The
+ *      judge grades the child's reasoning, so an answer the child never gave
+ *      is not a bad grade, it is a fabricated one.
  */
 function takeJudgeRequest(s) {
   const path = join(s.dir, ".judge-request.json");
   if (!existsSync(path)) return null;
+  let req = null;
   try {
-    const req = JSON.parse(readFileSync(path, "utf8"));
-    return String(req.final_answer || "").trim() ? req : null;
+    req = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    return null;
+    req = null;
   } finally {
     try { rmSync(path, { force: true }); } catch { /* already gone */ }
   }
+
+  const answer = String(req?.final_answer || "").trim();
+  if (!answer) return null;
+
+  if (s.userTurns < 2) {
+    console.warn(
+      `[whyzr] ${s.kidId}: REFUSED a judge hand-off after only ${s.userTurns} child turn(s). ` +
+      "The child has not answered yet; the session continues."
+    );
+    return null;
+  }
+
+  if (!echoesTheChild(answer, s)) {
+    console.warn(
+      `[whyzr] ${s.kidId}: REFUSED a judge hand-off whose answer does not match anything ` +
+      "the child said; the session continues."
+    );
+    return null;
+  }
+  return req;
+}
+
+/**
+ * Does the submitted answer actually come from the child?
+ *
+ * Deliberately lenient. The tutor is told to pass the child's exact words,
+ * but a little tidying is normal and blocking a real hand-off would be worse
+ * than letting a slightly-cleaned one through. This only catches wholesale
+ * invention: an answer sharing almost no content words with anything the
+ * child typed.
+ */
+function echoesTheChild(answer, s) {
+  const words = (t) => new Set(
+    String(t).toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/)
+      .filter((w) => w.length > 3)          // drop "the", "and", "is"
+  );
+  const said = new Set();
+  for (const m of s.transcript) {
+    if (m.role === "kid") for (const w of words(m.text)) said.add(w);
+  }
+  const submitted = [...words(answer)];
+  if (!submitted.length) return true;       // "yes", "outside": nothing to match on
+  const overlap = submitted.filter((w) => said.has(w)).length;
+  return overlap / submitted.length >= 0.3;
 }
 
 /**

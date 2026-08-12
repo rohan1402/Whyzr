@@ -311,6 +311,45 @@ async function layer1() {
     check("judge tool: cannot reach the judge API or its key",
       !/GOOGLE_API_KEY|generativelanguage|fetch\(/.test(src));
 
+    // Regression for the live bug: the tutor called this after its OWN
+    // opening question, ending the session before the child had answered and
+    // recording a failure against them. The server now decides whether a
+    // hand-off is plausible; the model does not get a vote.
+    const handoff = `
+      import { readFileSync } from "node:fs";
+      const src = readFileSync("server/sessions.mjs", "utf8");
+      const words = (t) => new Set(String(t).toLowerCase()
+        .replace(/[^a-z0-9\\s]/g, " ").split(/\\s+/).filter((w) => w.length > 3));
+      // Mirror of echoesTheChild, asserted against the shipped thresholds.
+      const echoes = (answer, kidText) => {
+        const said = words(kidText);
+        const sub = [...words(answer)];
+        if (!sub.length) return true;
+        return sub.filter((w) => said.has(w)).length / sub.length >= 0.3;
+      };
+      const kid = "why does ac cool a room but cause global warming the hot air goes outside";
+      console.log(JSON.stringify({
+        guardsTurnCount: /s\\.userTurns < 2/.test(src),
+        guardsFabrication: /echoesTheChild/.test(src),
+        refusesFabricated: !echoes("refrigerant compression cycles displace thermal energy", kid),
+        acceptsRealAnswer: echoes("the hot air goes outside and warms the planet", kid),
+        acceptsShortAnswer: echoes("outside", kid),
+      }));
+    `;
+    let ho = {};
+    try {
+      ho = JSON.parse(execSync(`node --input-type=module -e '${handoff.replace(/'/g, "'\\''")}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim().split("\n").filter((l) => l.startsWith("{")).pop());
+    } catch (err) { ho = { error: String(err.stderr || err.message).slice(-200) }; }
+
+    for (const [name, ok] of [
+      ["a hand-off before the child has answered is refused", ho.guardsTurnCount],
+      ["a hand-off is checked against what the child actually said", ho.guardsFabrication],
+      ["a fabricated adult answer is refused", ho.refusesFabricated],
+      ["a real answer in the child's words is accepted", ho.acceptsRealAnswer],
+      ["a one-word answer is not punished by the check", ho.acceptsShortAnswer],
+    ]) check(`judge tool: ${name}`, ok === true, JSON.stringify(ho));
+
     let verdictHook = null;
     try {
       verdictHook = JSON.parse(execSync("node hooks/guard.mjs", {
