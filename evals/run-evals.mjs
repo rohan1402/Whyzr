@@ -368,6 +368,82 @@ async function layer1() {
     for (const [name, ok] of stage1Checks) check(`stage1: ${name}`, ok === true, JSON.stringify(s1));
     rmSync(scratch, { recursive: true, force: true });
   }
+
+  // 5b. Move selection: fixes 0, 1 and 1b. Fix 0 is checked against the REAL
+  // loader, not against our own agent.yaml write: the claim is about what the
+  // model receives, so asserting on the file we just wrote would prove
+  // nothing. Selection is deterministic by design, so these are exact.
+  {
+    const scratch = join(ROOT, ".whyzr-eval-data");
+    rmSync(scratch, { recursive: true, force: true });
+    const sel = `
+      import { readFileSync, writeFileSync } from "node:fs";
+      import { join } from "node:path";
+      import { provisionChild } from "./server/worktrees.mjs";
+      import { selectMove, commitToMove, readMoves } from "./server/moves.mjs";
+      import { loadAgent } from "./node_modules/@open-gitagent/gitagent/dist/loader.js";
+
+      const d = provisionChild("evalsel");
+      const RIVALS = readMoves(d).map((m) => m.name);
+      const setStats = (move, u, s) => {
+        const p = join(d, "skills", move, "SKILL.md");
+        writeFileSync(p, readFileSync(p, "utf8")
+          .replace(/^usage_count: .*/m, "usage_count: " + u)
+          .replace(/^success_count: .*/m, "success_count: " + s));
+      };
+
+      // Fix 1b: with one move untried, it wins regardless of how good the
+      // others look. analogy-bridge is deliberately given a strong record.
+      setStats("analogy-bridge", 10, 9); setStats("decompose", 5, 4);
+      setStats("flip-it", 3, 0); setStats("observe-recall", 8, 2);
+      const untriedFirst = selectMove(d);
+
+      // Fix 1: once everything is tried, the smoothed rate decides. A 2/2
+      // move (0.750) must LOSE to a 9/10 move (0.833), which is the whole
+      // point of smoothing: a tiny perfect record is not evidence.
+      setStats("predict-first", 2, 2);
+      const byRate = selectMove(d);
+
+      // Fix 0: what actually reaches the model.
+      const chosen = commitToMove(d);
+      const yaml = join(d, "agent.yaml");
+      const filtered = readFileSync(yaml, "utf8");
+      const withF = await loadAgent(d);
+      writeFileSync(yaml, filtered.replace(/^skills:.*$\\n/m, ""));
+      const withoutF = await loadAgent(d);
+      writeFileSync(yaml, filtered);
+      const inPrompt = (p) => RIVALS.filter((n) => p.includes(n));
+
+      console.log(JSON.stringify({
+        untriedFirst: untriedFirst.name === "predict-first" && untriedFirst.why === "never tried",
+        byRate: byRate.name === "analogy-bridge",
+        rivalsUnfiltered: inPrompt(withoutF.systemPrompt).length,
+        rivalsFiltered: inPrompt(withF.systemPrompt),
+        chosen: chosen.name,
+        alwaysOn: withF.systemPrompt.includes("session-wrapup"),
+      }));
+    `;
+    let s2 = {};
+    try {
+      const raw = execSync(
+        `WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${sel.replace(/'/g, "'\\''")}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim();
+      s2 = JSON.parse(raw.split("\n").filter((l) => l.startsWith("{")).pop());
+    } catch (err) { s2 = { error: String(err.stderr || err.message).slice(-400) }; }
+
+    const selChecks = [
+      ["fix 1b: an untried move is tried before a proven one", s2.untriedFirst === true],
+      ["fix 1: smoothed success rate beats a small perfect record", s2.byRate === true],
+      ["fix 0: without the filter, ALL rival moves reach the prompt", s2.rivalsUnfiltered === 5],
+      ["fix 0: with the filter, exactly one rival move reaches the prompt",
+        Array.isArray(s2.rivalsFiltered) && s2.rivalsFiltered.length === 1],
+      ["fix 0: the move in the prompt IS the move we selected",
+        Array.isArray(s2.rivalsFiltered) && s2.rivalsFiltered[0] === s2.chosen],
+      ["fix 0: always-on skills survive the filter (the journal still works)", s2.alwaysOn === true],
+    ];
+    for (const [name, ok] of selChecks) check(`moves: ${name}`, ok === true, JSON.stringify(s2));
+    rmSync(scratch, { recursive: true, force: true });
+  }
   sh(`git checkout -q ${startBranch}`);
 
   const stray = sh("git status --porcelain");
