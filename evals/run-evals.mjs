@@ -444,6 +444,85 @@ async function layer1() {
     for (const [name, ok] of selChecks) check(`moves: ${name}`, ok === true, JSON.stringify(s2));
     rmSync(scratch, { recursive: true, force: true });
   }
+
+  // 5c. Verdict handling. Every path here is offline: no Gemini call, no API
+  // cost. The paths that MUST NOT call a model (give-up, empty answer) are
+  // asserted by running them with no GOOGLE_API_KEY set at all, so a
+  // regression that routes them through the judge fails loudly instead of
+  // quietly costing money and softening a failure into a success.
+  {
+    const scratch = join(ROOT, ".whyzr-eval-data");
+    rmSync(scratch, { recursive: true, force: true });
+    const jud = `
+      import { readFileSync } from "node:fs";
+      import { join } from "node:path";
+      import { provisionChild } from "./server/worktrees.mjs";
+      import { grade, gaveUp, judgeConfigured } from "./server/judge.mjs";
+      import { applyVerdict, logVerdict } from "./server/outcomes.mjs";
+
+      const d = provisionChild("evaljudge");
+      const conf = () => readFileSync(join(d, "skills/predict-first/SKILL.md"), "utf8")
+        .match(/^confidence: (.*)$/m)[1].trim();
+
+      const noKey = !judgeConfigured();
+      const gu = gaveUp();
+      // Empty answer must resolve WITHOUT a model call; with no key set, a
+      // call would throw.
+      const empty = await grade({ gradable: true, question: "q", target: "t", age: 9 }, "   ");
+
+      const start = conf();
+      const ung = await applyVerdict(d, "predict-first", "not gradeable", "no settled answer");
+      const afterUngradable = conf();
+
+      const fail = await applyVerdict(d, "predict-first", "failure", "missed it");
+      const afterFailure = conf();
+      const succ = await applyVerdict(d, "predict-first", "success");
+      const afterSuccess = conf();
+
+      let partialRejected = false;
+      try { await applyVerdict(d, "predict-first", "partial", "x"); }
+      catch { partialRejected = true; }
+
+      logVerdict(d, { date: "2026-01-01", verdict: "failure", reason: "r", move: "predict-first",
+                      question: "why is the sky blue", target: "t",
+                      before: fail.before, after: fail.after });
+      const log = readFileSync(join(d, "verdicts.md"), "utf8");
+
+      console.log(JSON.stringify({
+        noKey,
+        giveUpIsFailure: gu.verdict === "failure",
+        emptyIsFailure: empty.verdict === "failure",
+        ungradableApplied: ung.applied,
+        ungradableUnchanged: afterUngradable === start,
+        failureDrops: Number(afterFailure) === 0.8,
+        successRaises: Number(afterSuccess) > Number(afterFailure),
+        countsReconcile: succ.after.success_count + succ.after.failure_count === succ.after.usage_count,
+        partialRejected,
+        logHasQuestion: log.includes("why is the sky blue"),
+      }));
+    `;
+    let s3 = {};
+    try {
+      // GOOGLE_API_KEY deliberately blanked: these paths must never call out.
+      const raw = execSync(
+        `WHYZR_OPEN_DEV=1 GOOGLE_API_KEY= WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${jud.replace(/'/g, "'\\''")}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim();
+      s3 = JSON.parse(raw.split("\n").filter((l) => l.startsWith("{")).pop());
+    } catch (err) { s3 = { error: String(err.stderr || err.message).slice(-400) }; }
+
+    const judgeChecks = [
+      ["the give-up control is a failure, with no judge call", s3.noKey === true && s3.giveUpIsFailure === true],
+      ["an empty final answer is a failure, with no judge call", s3.emptyIsFailure === true],
+      ["not gradeable changes nothing at all", s3.ungradableApplied === false && s3.ungradableUnchanged === true],
+      ["a failure drops confidence by 0.2 (the framework's math)", s3.failureDrops === true],
+      ["a success raises confidence", s3.successRaises === true],
+      ["success_count + failure_count reconciles with usage_count", s3.countsReconcile === true],
+      ["a partial verdict is refused (HANDOFF 1.1 removed it)", s3.partialRejected === true],
+      ["the verdict log records the question that moved the number", s3.logHasQuestion === true],
+    ];
+    for (const [name, ok] of judgeChecks) check(`judge: ${name}`, ok === true, JSON.stringify(s3));
+    rmSync(scratch, { recursive: true, force: true });
+  }
   sh(`git checkout -q ${startBranch}`);
 
   const stray = sh("git status --porcelain");
