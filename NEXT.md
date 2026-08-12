@@ -26,6 +26,16 @@ was wrong and why. Current state: 60/60 machinery checks, the loop is closed
 (judge -> verdict -> confidence -> commit), and FEEDBACK.md carries 21
 findings.
 
+BLOCKED ON CREDITS: the Anthropic balance was exhausted partway through the
+last seeding run, so `child-seed-nova` has 20 sessions under the tightened
+judge and `child-seed-pip` has none. Top up, then:
+
+    node scripts/seed.mjs --sessions 20 --reset
+
+One full run is ~$0.026 and prints its own measured cost. Run it two or
+three times before drawing any conclusion about convergence: identical code
+produced opposite outcomes across runs A and B.
+
 Remaining, and NOT started:
 - The tutor calling the judge as a tool to control grading TIMING (design
   section 2). Grading currently runs when the session retires. The verdict

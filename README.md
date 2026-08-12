@@ -362,8 +362,41 @@ Design section 2 anticipated this exactly: *"if seeded runs come back with
 almost no failures, the judge is too soft. Not the tutor too good."* A
 lenient judge makes a neutral move score like a strong one, nothing
 separates, and selection settles on whichever move happened to be sampled
-first. The judge's constitution already says borderline is failure; it is
-not applying it strictly enough, and tightening it is the next change.
+first.
+
+### Tightening the judge, and what one run can and cannot show
+
+`judge/SOUL.md` now carries two explicit tests. The **circularity test**:
+strip the question's own words from the answer, and if nothing explanatory
+is left, it fails, because "it melts because it gets hot" restates melting
+as the reason for melting. The **concessive test**: if the judge's own
+reason wants a "despite" or a "mostly", that is the shortfall being written
+down, so it is a failure. It also now says most early sessions should fail,
+since a run where almost everything succeeds is a broken judge rather than
+a good tutor.
+
+Calibrated before re-seeding, 4 of 4: both circular answers fail, and both
+genuinely correct childlike answers still pass, so it tightens without
+simply failing everything.
+
+The re-seed after this change is **incomplete**: Nova's 20 sessions ran and
+the Anthropic credit balance was exhausted before Pip's began. What Nova's
+run shows is real but is one child in one run:
+
+- `decompose`, the neutral move that previously passed 15 of 15, started
+  failing and lost the lead
+- she landed on `observe-recall` 13/13, which IS one of her profiled
+  strengths
+- the judge now rejects the exact pattern it used to accept: *"recognized
+  that heat does something to the dough but failed to identify the
+  mechanism of expanding gas bubbles"*
+
+That is the mechanism working. It is **not** evidence that convergence is
+fixed, and given how far run A and run B diverged on identical code, one
+child in one run should not be read as one. The seeded branches are
+currently in that half-finished state on purpose rather than being quietly
+patched: `child-seed-nova` has 20 sessions under the tightened judge and
+`child-seed-pip` has none.
 
 Seeded children live on `child-seed-*` branches, are **never merged to
 main**, and never share a repo state with a real child.
