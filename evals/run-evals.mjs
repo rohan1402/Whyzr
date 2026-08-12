@@ -307,7 +307,9 @@ async function layer1() {
       const a = provisionChild("evalA"), b = provisionChild("evalB");
 
       // gitagent writes skill stats without committing; the app must commit.
-      bump(a, "predict-first", "1.0"); bump(b, "predict-first", "0.3");
+      // Both must differ from the seeded 1.0, or "the file changed" is
+      // vacuously false for that child and the check passes by accident.
+      bump(a, "predict-first", "0.8"); bump(b, "predict-first", "0.3");
       const dirtyBefore = git(a, ["status", "--porcelain"]) !== "";
       commitSession(a, "evalA"); commitSession(b, "evalB");
       const cleanAfter = git(a, ["status", "--porcelain"]) === "";
@@ -323,7 +325,7 @@ async function layer1() {
       rmSync(a, { recursive: true, force: true });
       rebuildMissingWorktrees();
       const rebuilt = existsSync(join(a, ".git")) &&
-        readFileSync(join(a, "skills/predict-first/SKILL.md"), "utf8").includes("confidence: 1.0");
+        readFileSync(join(a, "skills/predict-first/SKILL.md"), "utf8").includes("confidence: 0.8");
 
       // The lock is outside the worktree and holds one child at a time.
       let secondBlocked = false, worktreeCleanWhileLocked = false;
