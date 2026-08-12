@@ -107,6 +107,11 @@
     font-size: .85rem; color: var(--ink); opacity: .55; cursor: pointer; font-family: inherit;
     padding: 8px;
   }
+  #giveup {
+    position: fixed; top: 12px; left: 14px; background: none; border: none;
+    font-size: .85rem; color: var(--ink); opacity: .45; cursor: pointer; font-family: inherit;
+    padding: 8px;
+  }
   #miclabel {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: calc(2px + env(safe-area-inset-bottom)); font-size: .75rem; opacity: .5;
@@ -156,6 +161,12 @@
     <input id="typed" placeholder="or type here..." autocomplete="off">
     <button id="mic" title="Push to talk" aria-label="Push to talk">&#127908;</button>
   </div>
+  <!-- The give-up control is a BUTTON, never keyword matching on what the
+       child types: "just tell me" has too many phrasings to catch, and a
+       classifier would add a model call and a new way to be wrong. A button
+       is unambiguous, instantly loggable, and gives the child a visible way
+       out, which matters more than the score. -->
+  <button id="giveup" class="hidden" title="It is okay to ask">just tell me the answer</button>
   <div id="miclabel" class="hidden">press the button and talk</div>
   <a class="parentlink hidden" id="parentLink" href="/parent">grown-ups: see the journal</a>
 
@@ -165,7 +176,7 @@
   let busy = false, sessionOver = false, epoch = 0;
 
   const show = (...ids) => {
-    ["gate", "setup", "chat", "dock", "miclabel", "newchat", "parentLink"]
+    ["gate", "setup", "chat", "dock", "miclabel", "newchat", "giveup", "parentLink"]
       .forEach((id) => $(id).classList.add("hidden"));
     ids.forEach((id) => $(id).classList.remove("hidden"));
   };
@@ -291,6 +302,17 @@
     hello();
   });
 
+  $("giveup").addEventListener("click", async () => {
+    if (sessionOver) return;
+    epoch += 1;
+    busy = false;
+    sessionOver = true;
+    const out = await post("/api/giveup");
+    // Warm, never scolding. The child is told this was an honest thing to
+    // do, because the score is not their business and the habit of asking is.
+    bubble("tutor", (out && out.reply) || "That's okay. Ask me a new why question whenever you like.");
+  });
+
   window.addEventListener("pagehide", () => {
     try { navigator.sendBeacon("/api/bye"); } catch (e) { /* best effort */ }
   });
@@ -302,7 +324,7 @@
   }
 
   function startChat(nickname, note) {
-    show("chat", "dock", "miclabel", "newchat", "parentLink");
+    show("chat", "dock", "miclabel", "newchat", "giveup", "parentLink");
     if (note) bubble("tutor", note);
     hello(nickname);
   }

@@ -273,7 +273,7 @@ export function commitLearning(dir, note) {
  * is the audit trail the design asks for, for free.
  */
 export function commitSession(dir, note) {
-  return commitInWorktree(dir, ["skills/", "memory/", "agent.yaml"], `session: ${note}`);
+  return commitInWorktree(dir, ["skills/", "memory/", "agent.yaml", "verdicts.md"], `session: ${note}`);
 }
 
 /** Restore a tracked file to the state this child was provisioned with. */

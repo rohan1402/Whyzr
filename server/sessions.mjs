@@ -18,6 +18,8 @@ import { config, paths } from "./config.mjs";
 import { git, commitSession, withChildLock } from "./worktrees.mjs";
 import { voiceSuffix } from "./age.mjs";
 import { commitToMove } from "./moves.mjs";
+import { deriveTarget, grade, gaveUp, judgeConfigured } from "./judge.mjs";
+import { applyVerdict, logVerdict } from "./outcomes.mjs";
 import { saveTranscript } from "./transcripts.mjs";
 import { newSessionId } from "./auth.mjs";
 
@@ -100,7 +102,16 @@ function create(kidId, profile) {
   const s = {
     kidId,
     dir,
+    age: profile?.age ?? 8,
     id: newSessionId(),
+    // The judge's state for this session: the frozen target, the promise
+    // deriving it, the child's latest answer, and whether they pressed the
+    // give-up control (which skips the judge entirely).
+    frozen: null,
+    freezing: null,
+    lastAnswer: "",
+    gaveUp: false,
+    move: null,
     queue: [],
     wake: null,
     q: null,
@@ -193,6 +204,26 @@ export function ask(kidId, text, { onNewSession, profile } = {}) {
     s.userTurns += 1;
     s.transcript.push({ role: "kid", text, at: new Date().toISOString() });
 
+    // Freeze the target on the FIRST question, before any tutoring, and do
+    // it in the background: the child should never wait on the judge. A
+    // target derived later would have the tutor's hints in the room, which
+    // is exactly the stretchy standard freezing exists to prevent.
+    if (!s.frozen && !s.freezing && judgeConfigured()) {
+      s.freezing = deriveTarget(text, s.age)
+        .then((t) => {
+          s.frozen = t;
+          console.log(`[whyzr] ${kidId} target frozen (gradable: ${t.gradable})`);
+        })
+        .catch((err) => {
+          // No target means the session grades as ungradable, which skips the
+          // confidence update. Losing one session's signal is correct; making
+          // one up is not.
+          console.error(`[whyzr] target derivation failed for ${kidId}: ${err.message}`);
+        });
+    }
+    // The child's most recent substantive message is their answer so far.
+    s.lastAnswer = text;
+
     const before = completedTurns(s.q.messages());
     push(s, text);
 
@@ -222,6 +253,20 @@ export function ask(kidId, text, { onNewSession, profile } = {}) {
  * Retire a session: journal it (if it saw real conversation), then close the
  * feed. Enqueued so it runs AFTER any in-flight ask. Callers do not await.
  */
+/**
+ * The give-up control. Marks the session a failure and retires it. A button
+ * in the UI, never keyword detection on the child's text: "just tell me"
+ * has too many phrasings to match and a classifier would add a call and a
+ * failure mode. Returns false if there was no live session to give up on.
+ */
+export function giveUp(kidId) {
+  const s = sessions.get(kidId);
+  if (!s || s.retired) return false;
+  s.gaveUp = true;
+  retire(kidId, "gave up");
+  return true;
+}
+
 export function retire(kidId, why) {
   const s = sessions.get(kidId);
   if (!s || s.retired) return;
@@ -270,6 +315,9 @@ async function retireNow(s, why) {
     // destroyed the moment a worktree is rebuilt from its branch. A session
     // is the unit of learning, so the app commits it here, once, after the
     // agent has stopped writing.
+    // Grade, then commit, both inside one hold of the lock so a verdict and
+    // the confidence change it caused can never be split across processes.
+    //
     // Fix 2, taken for real. The in-process promise chain serialises this
     // child's own turns, but it does not span PROCESSES, and the window
     // where two processes both write this worktree is routine rather than
@@ -277,9 +325,11 @@ async function retireNow(s, why) {
     // 105 seconds while the new instance is already accepting traffic on the
     // same volume. Two processes committing to one worktree fight over
     // .git/index.lock and lose commits.
+    let verdictNote = "";
     try {
       await withChildLock(s.kidId, async () => {
-        const hash = commitSession(s.dir, `${s.id}, ${s.userTurns} turns, ended ${why}`);
+        verdictNote = await gradeSession(s, why);
+        const hash = commitSession(s.dir, `${s.id}, ${s.userTurns} turns, ended ${why}${verdictNote}`);
         if (hash) console.log(`[whyzr] committed session learning for ${s.kidId}: ${hash}`);
       });
     } catch (err) {
@@ -301,6 +351,52 @@ async function retireNow(s, why) {
         console.error(`[whyzr] transcript save failed: ${err.message}`);
       }
     }
+  }
+}
+
+/**
+ * Grade the session and write the evidence. Returns a short note for the
+ * commit subject, so `git log` on a child's branch reads as a history of
+ * what was tried and whether it worked.
+ *
+ * Every failure path here degrades to "no confidence update". That is
+ * deliberate: a missing verdict costs one session of signal, while a
+ * guessed one corrupts the only measurement the product makes.
+ */
+async function gradeSession(s, why) {
+  if (!s.move) return "";
+  try {
+    let outcome;
+    if (s.gaveUp) {
+      // Design section 2: the give-up control logs failure immediately, no
+      // judge involved. Checked FIRST so no code path can route it to Gemini.
+      outcome = gaveUp();
+    } else if (!judgeConfigured()) {
+      return "";
+    } else {
+      if (s.freezing) await s.freezing;              // may still be in flight
+      if (!s.frozen) return "";                       // derivation failed, no signal
+      outcome = await grade(s.frozen, s.lastAnswer);
+    }
+
+    const { applied, before, after } = await applyVerdict(s.dir, s.move.name, outcome.verdict, outcome.reason);
+    logVerdict(s.dir, {
+      date: new Date().toISOString().slice(0, 10),
+      verdict: outcome.verdict,
+      reason: outcome.reason,
+      move: s.move.name,
+      question: s.frozen?.question || s.transcript.find((m) => m.role === "kid")?.text || "",
+      target: s.frozen?.gradable ? s.frozen.target : "(no settled answer)",
+      before, after,
+    });
+    console.log(
+      `[whyzr] ${s.kidId} verdict ${outcome.verdict} on ${s.move.name}` +
+      (applied ? `: confidence ${before.confidence} -> ${after.confidence}` : " (no confidence update)")
+    );
+    return `, ${outcome.verdict}`;
+  } catch (err) {
+    console.error(`[whyzr] grading failed for ${s.kidId}, no confidence update: ${err.message}`);
+    return "";
   }
 }
 

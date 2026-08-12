@@ -319,6 +319,21 @@ async function handle(req, res, url) {
     }
   }
 
+  // --- kid: the give-up control. A button, so it is unambiguous and
+  // instantly loggable. Logs failure immediately with no judge call.
+  if (req.method === "POST" && pathname === "/api/giveup") {
+    const kidId = requireKid(req, res);
+    if (!kidId) return;
+    const had = sessions.giveUp(kidId);
+    return json(res, 200, {
+      ok: true,
+      had,
+      reply: "That's okay. Wanting the answer is not giving up, it's being honest. " +
+        "Ask me a brand new why question whenever you like.",
+      sessionEnded: true,
+    });
+  }
+
   if (req.method === "POST" && (pathname === "/api/new" || pathname === "/api/bye")) {
     const kidId = auth.kidFromRequest(req);
     if (kidId) sessions.retire(kidId, pathname === "/api/bye" ? "page closed" : "new adventure");
