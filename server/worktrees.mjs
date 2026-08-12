@@ -239,10 +239,20 @@ export function templateBase(dir) {
 
 // ----------------------------------------------------------- writing to git
 
-/** Stage paths and commit if anything changed. Returns the short hash or null. */
+/**
+ * Stage paths and commit if anything changed. Returns the short hash or null.
+ *
+ * Missing paths are skipped rather than passed to git: `git add` fails the
+ * whole command with "pathspec did not match any files" if ANY argument is
+ * absent, so a session that was never graded (no verdicts.md yet) would take
+ * the journal and the skill stats down with it. Every caller here is
+ * additive, so nothing needs staging a deletion.
+ */
 export function commitInWorktree(dir, addPaths, message) {
   assertNoRemotes(dir);
-  git(dir, ["add", "--", ...addPaths]);
+  const present = addPaths.filter((p) => existsSync(join(dir, p)));
+  if (!present.length) return null;
+  git(dir, ["add", "--", ...present]);
   const staged = git(dir, ["diff", "--cached", "--name-only"]);
   if (!staged) return null;
   git(dir, ["commit", "--quiet", "-m", message]);
