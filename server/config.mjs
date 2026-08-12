@@ -64,7 +64,11 @@ export const config = {
 
   // M1 is a single-tester deployment. Refuse to mint more kids than this so a
   // leaked code cannot fill the volume with repos.
-  maxKids: num("MAX_KIDS", 1),
+  // Two, not one. The product's central claim is that two children of the
+  // same tutor diverge, and `git diff child-a child-b -- skills/` cannot be
+  // run on a deployment that refuses to create child b. A cap of 1 made the
+  // README tell readers to run a command the shipped defaults forbade.
+  maxKids: num("MAX_KIDS", 2),
 };
 
 // Dev mode is an EXPLICIT opt-in, never an inference from a missing secret.
