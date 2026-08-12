@@ -1,8 +1,8 @@
 # Deploying Whyzr to Railway
 
-The image is verified: it builds, boots, clones a kid repo inside the
-container, and holds a real conversation. What follows is the exact sequence
-to put it on a URL you can send to someone.
+The image is verified: it builds, boots, provisions a child worktree inside
+the container, and holds a real conversation. What follows is the exact
+sequence to put it on a URL you can send to someone.
 
 Nothing here puts a secret in git. Every value goes into Railway's own
 environment settings.

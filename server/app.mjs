@@ -31,7 +31,7 @@ import * as auth from "./auth.mjs";
 import * as caps from "./caps.mjs";
 import * as sessions from "./sessions.mjs";
 import * as journal from "./journal.mjs";
-import { provisionChild, deleteChild, childBranch, ensureAgentRepo, syncTemplate, rebuildMissingWorktrees, git } from "./worktrees.mjs";
+import { provisionChild, deleteChild, childBranch, ensureAgentRepo, syncTemplate, rebuildMissingWorktrees, withChildLock, git } from "./worktrees.mjs";
 import { ageProfile } from "./age.mjs";
 import { listTranscripts, readTranscript } from "./transcripts.mjs";
 
@@ -392,7 +392,10 @@ async function handle(req, res, url) {
       return json(res, 400, { error: "That does not look like a complete rules file. Reload and try again." });
     }
     try {
-      const hash = journal.saveRules(paths.kidRepo(kidId), rules);
+      // Under the same per-child lock as a session commit: a parent saving
+      // rules while their child's session is wrapping up is two writers on
+      // one worktree, and this route does not sit on the session queue.
+      const hash = await withChildLock(kidId, () => journal.saveRules(paths.kidRepo(kidId), rules));
       return json(res, 200, { ok: true, hash });
     } catch (err) {
       console.error(`[whyzr] saveRules failed: ${err.stack || err}`);
@@ -404,7 +407,7 @@ async function handle(req, res, url) {
     const kidId = parentKid(req, url);
     if (!kidId) return json(res, 401, { error: "unauthorized" });
     try {
-      const hash = journal.restoreRules(paths.kidRepo(kidId));
+      const hash = await withChildLock(kidId, () => journal.restoreRules(paths.kidRepo(kidId)));
       return json(res, 200, { ok: true, hash, rules: journal.readRules(paths.kidRepo(kidId)) });
     } catch (err) {
       console.error(`[whyzr] restoreRules failed: ${err.stack || err}`);

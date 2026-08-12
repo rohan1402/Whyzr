@@ -15,8 +15,9 @@
 // branch when it retires; and transcripts can be captured for testing.
 
 import { config, paths } from "./config.mjs";
-import { git, commitSession } from "./worktrees.mjs";
+import { git, commitSession, withChildLock } from "./worktrees.mjs";
 import { voiceSuffix } from "./age.mjs";
+import { commitToMove } from "./moves.mjs";
 import { saveTranscript } from "./transcripts.mjs";
 import { newSessionId } from "./auth.mjs";
 
@@ -121,6 +122,23 @@ function create(kidId, profile) {
       }
     }
   }
+  // Fix 0, and it MUST happen before query(): gitagent reads agent.yaml when
+  // the session loads, so filtering the prompt afterwards would do nothing.
+  // One rival move reaches the model, so the move we grade is necessarily
+  // the move it used.
+  try {
+    s.move = commitToMove(dir);
+    if (s.move) {
+      console.log(`[whyzr] ${kidId} session ${s.id}: move ${s.move.name} (${s.move.why}, rate ${s.move.rate.toFixed(2)})`);
+    }
+  } catch (err) {
+    // Never block a child from talking because selection failed. Without a
+    // filter the model sees every move, which is the pre-fix-0 behaviour:
+    // degraded attribution, still a working tutor. Say so loudly.
+    console.error(`[whyzr] move selection FAILED for ${kidId}, prompt is unfiltered: ${err.message}`);
+    s.move = null;
+  }
+
   // Age reaches the model here, as a prompt parameter. It used to be a branch
   // (age-5 / main / age-12) whose only difference was one file, which meant
   // three copies of the persona to keep in sync and a checkout on every
@@ -252,9 +270,18 @@ async function retireNow(s, why) {
     // destroyed the moment a worktree is rebuilt from its branch. A session
     // is the unit of learning, so the app commits it here, once, after the
     // agent has stopped writing.
+    // Fix 2, taken for real. The in-process promise chain serialises this
+    // child's own turns, but it does not span PROCESSES, and the window
+    // where two processes both write this worktree is routine rather than
+    // exotic: on redeploy the old instance keeps running wrap-ups for up to
+    // 105 seconds while the new instance is already accepting traffic on the
+    // same volume. Two processes committing to one worktree fight over
+    // .git/index.lock and lose commits.
     try {
-      const hash = commitSession(s.dir, `${s.id}, ${s.userTurns} turns, ended ${why}`);
-      if (hash) console.log(`[whyzr] committed session learning for ${s.kidId}: ${hash}`);
+      await withChildLock(s.kidId, async () => {
+        const hash = commitSession(s.dir, `${s.id}, ${s.userTurns} turns, ended ${why}`);
+        if (hash) console.log(`[whyzr] committed session learning for ${s.kidId}: ${hash}`);
+      });
     } catch (err) {
       console.error(`[whyzr] could not commit session learning for ${s.kidId}: ${err.message}`);
     }

@@ -31,7 +31,7 @@
 //    filesystem state on a volume; the branch is the durable artifact. On
 //    boot, any branch without a worktree is rebuilt.
 
-import { existsSync, openSync, closeSync, readFileSync, writeFileSync, unlinkSync, rmSync, statSync } from "node:fs";
+import { existsSync, openSync, closeSync, readFileSync, writeFileSync, unlinkSync, rmSync, renameSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { REPO_ROOT, paths, ensureDataDirs } from "./config.mjs";
@@ -55,16 +55,31 @@ export function git(cwd, args, opts = {}) {
   }).trim();
 }
 
+/** A bare repo has no working tree, so HEAD sits at the top level. */
+const isBareRepo = (dir) => existsSync(join(dir, "HEAD")) && !existsSync(join(dir, ".git"));
+
 /**
- * Invariants 1 and 2. Create the agent repo if missing: a clone of the
+ * Invariants 1 and 2. Create the agent repo if missing: a BARE clone of the
  * source with every remote removed. Idempotent, safe on every boot.
+ *
+ * Bare is load-bearing, not tidiness. A normal clone leaves `main` checked
+ * out in the agent repo's own working tree, and git refuses to fetch into a
+ * ref that is checked out somewhere:
+ *
+ *   fatal: refusing to fetch into branch 'refs/heads/main' checked out at ...
+ *
+ * That made syncTemplate() fail on every single boot, silently, so the agent
+ * repo froze at whatever commit it was first cloned at and no redeploy ever
+ * delivered a new reasoning move or a RULES.md amendment to any child. A bare
+ * repo has no working tree, nothing holds main, and the fetch succeeds.
  */
 export function ensureAgentRepo() {
   ensureDataDirs();
   const agent = paths.agentRepo();
-  if (!existsSync(join(agent, ".git"))) {
-    git(REPO_ROOT, ["clone", "--quiet", "--no-hardlinks", REPO_ROOT, agent]);
-    console.log(`[whyzr] created agent repo at ${agent}`);
+  if (existsSync(agent) && !isBareRepo(agent)) migrateToBare(agent);
+  if (!isBareRepo(agent)) {
+    git(REPO_ROOT, ["clone", "--quiet", "--bare", "--no-hardlinks", REPO_ROOT, agent]);
+    console.log(`[whyzr] created bare agent repo at ${agent}`);
   }
   const remotes = git(agent, ["remote"]).split("\n").filter(Boolean);
   for (const r of remotes) git(agent, ["remote", "remove", r]);
@@ -77,21 +92,61 @@ export function ensureAgentRepo() {
 }
 
 /**
+ * An agent repo created by an older build is a normal clone with main
+ * checked out, which permanently breaks syncTemplate. Rebuild it as a bare
+ * clone OF ITSELF, so every child branch and all their learning survive.
+ *
+ * The child worktree DIRECTORIES are then stale (their .git files point into
+ * the old repo), so they are removed and rebuilt from their branches at boot.
+ * That is invariant 4 doing exactly the job it exists for: branches are the
+ * durable artifact, worktrees are disposable.
+ */
+function migrateToBare(agent) {
+  const old = `${agent}.pre-bare-${Date.now()}`;
+  renameSync(agent, old);
+  git(REPO_ROOT, ["clone", "--quiet", "--bare", "--no-hardlinks", old, agent]);
+  const branches = git(agent, ["for-each-ref", "--format=%(refname:short)", "refs/heads/"])
+    .split("\n").filter((b) => b.startsWith("child-"));
+  for (const branch of branches) {
+    const dir = paths.kidRepo(branch.slice("child-".length));
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
+  }
+  rmSync(old, { recursive: true, force: true });
+  console.warn(
+    `[whyzr] migrated the agent repo to bare (${branches.length} child branch(es) preserved); ` +
+    "worktrees will be rebuilt from their branches"
+  );
+}
+
+/**
  * Fast-forward the agent repo's main to the deployed source, without ever
  * configuring a remote (fetch takes a path). Called at boot so a redeploy
- * brings new moves and rule changes to the template. Child branches are
- * untouched: merging main into them is a separate, deliberate step.
+ * brings new moves and rule changes to the template: design section 4's
+ * "improvements flow both ways, rules down from main". Child branches are
+ * untouched, because merging main into them is a separate, deliberate step.
  */
 export function syncTemplate() {
   const agent = paths.agentRepo();
+  const before = safeRev(agent, "main");
   try {
     git(agent, ["fetch", "--quiet", REPO_ROOT, "main:main"]);
   } catch (err) {
-    // Non-fast-forward means the agent repo's main has diverged from the
-    // source, which should not happen: main is only ever written by deploys.
-    console.warn(`[whyzr] template sync skipped: ${err.message.split("\n")[0]}`);
+    // This must never read as routine. It failed silently on every boot for
+    // the whole of Stage 1 and froze the template. Print git's actual reason:
+    // execFileSync puts it on stderr, and err.message alone is only ever
+    // "Command failed: git fetch ...", which sent the last debugger the
+    // wrong way.
+    const reason = String(err.stderr || "").trim() || err.message;
+    console.error(`[whyzr] TEMPLATE SYNC FAILED, children will not receive updates: ${reason}`);
+    return agent;
   }
+  const after = safeRev(agent, "main");
+  if (before !== after) console.log(`[whyzr] template synced: ${before} -> ${after}`);
   return agent;
+}
+
+function safeRev(dir, ref) {
+  try { return git(dir, ["rev-parse", "--short", ref], { stdio: "pipe" }); } catch { return "none"; }
 }
 
 /** Throws unless the repo (and therefore every worktree) has no remotes. */
@@ -210,9 +265,15 @@ export function commitLearning(dir, note) {
   return commitInWorktree(dir, ["skills/"], `learning: ${note}`);
 }
 
-/** Commit whatever the session wrote: journal facts and skill evidence. */
+/**
+ * Commit whatever the session wrote: journal facts, skill evidence, and the
+ * agent.yaml whose `skills:` line records which move this session committed
+ * to. Including agent.yaml is deliberate: `git log -p -- agent.yaml` on a
+ * child's branch then reads as the history of what was tried on them, which
+ * is the audit trail the design asks for, for free.
+ */
 export function commitSession(dir, note) {
-  return commitInWorktree(dir, ["skills/", "memory/"], `session: ${note}`);
+  return commitInWorktree(dir, ["skills/", "memory/", "agent.yaml"], `session: ${note}`);
 }
 
 /** Restore a tracked file to the state this child was provisioned with. */

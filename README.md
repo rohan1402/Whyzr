@@ -100,11 +100,12 @@ machine except the model call. This is the product.
 
 **Try it.** The same code also runs as a hosted app (`npm start`) so a
 family can open a link and start in ten seconds. Each child gets their own
-full git clone of this repo on the server, with their age selecting the
-persona branch. That clone has **no git remotes** and no code path in the
-app runs `git push`, so nothing a parent does in the hosted app can ever
-reach this repository. The parent dashboard displays that fact, and an
-eval asserts it.
+**branch, checked out as a git worktree**, so several children can be in
+session at once against one shared `.git`. Those worktrees hang off a
+separate agent repo on the server that has had **every git remote
+stripped**, and no code path in the app runs `git push`, so nothing a
+parent or child does in the hosted app can ever reach this repository. The
+parent dashboard displays that fact, and an eval asserts it.
 
 ```bash
 npm start          # hosted app; needs WHYZR_CODE (see .env.example)
@@ -184,8 +185,9 @@ Two layers, one command each.
 
 Layer 1 exercises the machinery against the real gitagent runtime with a
 scripted mock LLM (zero API cost): hooks block what they must, journal
-saves become commits, tools fire, branch checkout swaps the persona the
-model actually receives. 34 of 34 checks pass, including regression
+saves become commits, tools fire, a session's learning reaches a commit,
+and two children on the same repo genuinely diverge. 40 of 40 checks
+pass, including regression
 tests from two independent security audits of this repo: allowlist
 command chaining, case-insensitive filesystem reads, guard fail-closed
 fuzzing on malformed hook input, direct guard verdicts for every
