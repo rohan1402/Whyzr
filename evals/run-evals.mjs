@@ -349,9 +349,12 @@ async function layer1() {
     `;
     let s1 = {};
     try {
-      s1 = JSON.parse(execSync(
+      // worktrees.mjs logs to stdout on first boot ("created agent repo..."),
+      // so the result is the LAST line, not the whole stream.
+      const raw = execSync(
         `WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${stage1.replace(/'/g, "'\\''")}'`,
-        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim());
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim();
+      s1 = JSON.parse(raw.split("\n").filter(Boolean).pop());
     } catch (err) { s1 = { error: String(err.stderr || err.message).slice(-400) }; }
 
     const stage1Checks = [
