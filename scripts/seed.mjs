@@ -53,6 +53,7 @@ const flag = (name, fallback) => {
 const SESSIONS = Number(flag("sessions", 3));
 const RESET = args.includes("--reset");
 const CHILD_MODEL = process.env.WHYZR_SEED_MODEL || "claude-haiku-4-5-20251001";
+const PACE_MS = Number(flag("pace", 4000));
 
 // ---------------------------------------------------------------- the children
 //
@@ -205,9 +206,20 @@ async function seedChild(child, sessions, log) {
   for (let i = 0; i < sessions; i++) {
     const question = QUESTIONS[i % QUESTIONS.length];
     const move = commitToMove(dir);              // the real selection code
-    const answer = await childAnswer(child, question, move.name);
-    const frozen = await frozenTarget(question, child.age);
-    const outcome = await grade(frozen, answer); // the real judge, blind
+    let answer, frozen, outcome;
+    try {
+      answer = await childAnswer(child, question, move.name);
+      frozen = await frozenTarget(question, child.age);
+      outcome = await grade(frozen, answer);     // the real judge, blind
+    } catch (err) {
+      // Stop this child here rather than losing the run. Everything already
+      // graded is committed on the branch, so a quota wall costs the
+      // remaining sessions and nothing else. Never invent the missing
+      // verdicts: seeded data that is partly real and partly filled in would
+      // be worse than no seeded data.
+      log(`  ${child.id} stopped after ${i} sessions: ${err.message.split("\n")[0].slice(0, 120)}`);
+      break;
+    }
     const { before, after } = await applyVerdict(dir, move.name, outcome.verdict, outcome.reason);
 
     logVerdict(dir, {
@@ -222,6 +234,10 @@ async function seedChild(child, sessions, log) {
                 gradable: frozen.gradable, conf: after ? after.confidence : (before?.confidence ?? null), answer });
     log(`  ${child.id} #${String(i + 1).padStart(2)}  ${move.name.padEnd(15)} ` +
         `${outcome.verdict.padEnd(13)} ${after ? `conf ${before.confidence} -> ${after.confidence}` : "no update"}  ${question}`);
+
+    // Pace the run. Seeding is a burst of judge calls with no human in the
+    // loop, which is exactly the shape a per-minute quota is there to stop.
+    if (PACE_MS) await new Promise((r) => setTimeout(r, PACE_MS));
   }
   return { child, dir, rows };
 }

@@ -45,6 +45,27 @@ export const judgeConfigured = () => Boolean(process.env.GOOGLE_API_KEY);
  * One Gemini call. Returns parsed JSON, or throws. Deliberately small: the
  * judge does two things and both are a single turn with no tools.
  */
+/**
+ * Retry a rate-limited judge call with exponential backoff.
+ *
+ * 429 is not an error in the usual sense, it is the API asking us to slow
+ * down, and a single retry-free call turns a transient limit into a lost
+ * verdict. Retries are bounded: a quota that is genuinely exhausted (as
+ * opposed to a per-minute burst) must surface rather than spin.
+ */
+async function askWithBackoff(systemPrompt, userPrompt, opts = {}) {
+  const delays = [2_000, 6_000, 15_000];
+  for (let i = 0; ; i++) {
+    try {
+      return await ask(systemPrompt, userPrompt, opts);
+    } catch (err) {
+      if (err.status !== 429 || i >= delays.length) throw err;
+      console.warn(`[whyzr] judge rate limited, retrying in ${delays[i] / 1000}s`);
+      await new Promise((r) => setTimeout(r, delays[i]));
+    }
+  }
+}
+
 async function ask(systemPrompt, userPrompt, { timeoutMs = 20_000 } = {}) {
   const key = process.env.GOOGLE_API_KEY;
   if (!key) throw new Error("GOOGLE_API_KEY is not set");
@@ -64,7 +85,9 @@ async function ask(systemPrompt, userPrompt, { timeoutMs = 20_000 } = {}) {
     });
     if (!res.ok) {
       // Never log the URL: it carries the key as a query parameter.
-      throw new Error(`judge API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      const err = new Error(`judge API ${res.status}: ${(await res.text()).slice(0, 200)}`);
+      err.status = res.status;
+      throw err;
     }
     const data = await res.json();
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
@@ -91,7 +114,7 @@ export async function deriveTarget(question, age) {
     `When gradable is false, target is "" and why_not says why the question ` +
     `has no settled answer. When gradable is true, why_not is "".`;
 
-  const out = await ask(judgeSoul(), prompt);
+  const out = await askWithBackoff(judgeSoul(), prompt);
   return {
     question,
     age,
@@ -130,7 +153,7 @@ export async function grade(frozen, finalAnswer) {
     `"not gradeable" is not available here: this question was already ` +
     `established as having a settled answer.`;
 
-  const out = await ask(judgeSoul(), prompt);
+  const out = await askWithBackoff(judgeSoul(), prompt);
   const verdict = out.verdict === "success" ? "success" : "failure";
   return { verdict, reason: String(out.reason || "") };
 }
