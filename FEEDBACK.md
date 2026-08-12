@@ -228,10 +228,22 @@ the counts needed for a real estimate (`usage_count`, `success_count`) are
 already tracked. The information is there; confidence just is not the field
 that carries it.
 
+Observed, not just argued. In a seeded run of 20 sessions with one child,
+the best move available to that child ended at **confidence 0.09 with a
+success rate of 8 in 14**. `isSkillFlagged` calls anything below 0.4 a skill
+in trouble, so by that measure it was the worst skill in the library, while
+by success rate it was the best one that child had. Both numbers are right
+about different things: confidence is a decaying penalty counter that still
+remembers six failures, and the ratio says the child reaches the answer with
+it more often than with anything else. An application that selected on
+confidence, which is the obvious reading of the field, would have discarded
+that child's best move.
+
 Whyzr workaround: we select on a Laplace-smoothed success rate,
 `(success_count + 1) / (usage_count + 2)`, and leave confidence to do the job
 it is actually good at, which is flagging a skill below 0.4
-(`isSkillFlagged`, reinforcement.js:89).
+(`isSkillFlagged`, reinforcement.js:89). Worth noting the two then disagree
+openly, as above, and the framework offers no guidance on which to believe.
 
 Suggested fix: expose a `successRate` helper next to `isSkillFlagged`, so
 applications do not each invent their own.
