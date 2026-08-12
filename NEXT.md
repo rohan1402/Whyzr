@@ -36,13 +36,21 @@ One full run is ~$0.026 and prints its own measured cost. Run it two or
 three times before drawing any conclusion about convergence: identical code
 produced opposite outcomes across runs A and B.
 
+Stage 2 is built: the seeding harness, fix 3 (promotion strips evidence),
+`scripts/delete-child.sh`, and evals for all three including a two-PROCESS
+lock test. `maxKids` now defaults to 2 so the sibling diff runs on shipped
+defaults. 69/69 machinery checks.
+
 Remaining, and NOT started:
 - The tutor calling the judge as a tool to control grading TIMING (design
   section 2). Grading currently runs when the session retires. The verdict
   is unaffected: the tutor never controls the verdict, only when it happens.
-- Stage 2 (seeding two fictional children, the gradable-to-ungradable ratio).
-- Stage 3 (consent, scripts/delete-child.sh, dashboard panes).
-- `maxKids` still defaults to 1, so the two-child demo needs MAX_KIDS=2.
+- Stage 3: parental consent before a first session, a stated retention
+  policy in the README, and the dashboard panes as git commands.
+- Stage 4: real-session tuning with the sibling, fresh RESULTS.md, demo
+  recording, submission email.
+- Whether the tightened judge actually fixes convergence. One child in one
+  run says the mechanism works; it does not say the design does.
 
 ## What was open, in the order it was done
 
