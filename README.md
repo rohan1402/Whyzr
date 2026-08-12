@@ -379,24 +379,39 @@ Calibrated before re-seeding, 4 of 4: both circular answers fail, and both
 genuinely correct childlike answers still pass, so it tightens without
 simply failing everything.
 
-The re-seed after this change is **incomplete**: Nova's 20 sessions ran and
-the Anthropic credit balance was exhausted before Pip's began. What Nova's
-run shows is real but is one child in one run:
+The full run under the tightened judge, which is the data committed to the
+seeded branches now:
 
-- `decompose`, the neutral move that previously passed 15 of 15, started
-  failing and lost the lead
-- she landed on `observe-recall` 13/13, which IS one of her profiled
-  strengths
-- the judge now rejects the exact pattern it used to accept: *"recognized
-  that heat does something to the dough but failed to identify the
-  mechanism of expanding gas bubbles"*
+| | Nova, 11 | Pip, 7 |
+|---|---|---|
+| Profiled strengths | predict-first, observe-recall | analogy-bridge, flip-it |
+| Landed on | `predict-first` 12/13 | `flip-it` 8/14 |
+| A profiled strength? | yes | yes |
+| Failure rate on graded sessions | 27% | 55% |
 
-That is the mechanism working. It is **not** evidence that convergence is
-fixed, and given how far run A and run B diverged on identical code, one
-child in one run should not be read as one. The seeded branches are
-currently in that half-finished state on purpose rather than being quietly
-patched: `child-seed-nova` has 20 sessions under the tightened judge and
-`child-seed-pip` has none.
+The failure rates are the point. Before the tightening one child ran at 11%
+failure, which is the "almost no failures" the design warns about. At 27%
+and 55% the judge is producing signal instead of applause, and the moves
+have something to separate on.
+
+Across all four seeded runs, counting each completed child once: **2 of 4
+children landed on a profiled strength under the lenient judge, and 3 of 3
+under the tightened one.** Encouraging, and still a small enough sample that
+it should be read as a direction rather than a result.
+
+The judge now rejects the exact pattern it used to accept: *"recognized that
+heat does something to the dough but failed to identify the mechanism of
+expanding gas bubbles."*
+
+**One thing this run exposes that is worth stating.** Pip's winning move,
+`flip-it`, has a confidence of **0.09**. gitagent's own `isSkillFlagged`
+calls anything below 0.4 a skill in trouble, so by that measure it is the
+worst move in the library. By smoothed success rate it is the best move Pip
+has. Both are correct about different things: confidence is a decaying
+penalty counter that remembers his six failures, and the success rate says
+he still reaches the answer with it more often than with anything else.
+Selecting on confidence would have thrown away Pip's best move. This is
+fix 1 earning its place, visible in one number.
 
 Seeded children live on `child-seed-*` branches, are **never merged to
 main**, and never share a repo state with a real child.

@@ -26,21 +26,6 @@ was wrong and why. Current state: 60/60 machinery checks, the loop is closed
 (judge -> verdict -> confidence -> commit), and FEEDBACK.md carries 21
 findings.
 
-BLOCKED ON CREDITS: the Anthropic balance was exhausted partway through the
-last seeding run, so `child-seed-nova` has 20 sessions under the tightened
-judge and `child-seed-pip` has none. Top up, then:
-
-    node scripts/seed.mjs --sessions 20 --reset
-
-One full run is ~$0.026 and prints its own measured cost. Run it two or
-three times before drawing any conclusion about convergence: identical code
-produced opposite outcomes across runs A and B.
-
-Stage 2 is built: the seeding harness, fix 3 (promotion strips evidence),
-`scripts/delete-child.sh`, and evals for all three including a two-PROCESS
-lock test. `maxKids` now defaults to 2 so the sibling diff runs on shipped
-defaults. 69/69 machinery checks.
-
 Remaining, and NOT started:
 - The tutor calling the judge as a tool to control grading TIMING (design
   section 2). Grading currently runs when the session retires. The verdict
@@ -49,8 +34,11 @@ Remaining, and NOT started:
   policy in the README, and the dashboard panes as git commands.
 - Stage 4: real-session tuning with the sibling, fresh RESULTS.md, demo
   recording, submission email.
-- Whether the tightened judge actually fixes convergence. One child in one
-  run says the mechanism works; it does not say the design does.
+- Whether the tightened judge actually fixes convergence. 3 of 3 children
+  landed on a profiled strength under it, against 2 of 4 before, but that
+  is a direction and not a result. Run `node scripts/seed.mjs --sessions 20
+  --reset` a few more times before believing it. Each full run is ~$0.03
+  and prints its own measured cost.
 
 ## What was open, in the order it was done
 
