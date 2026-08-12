@@ -17,7 +17,6 @@
 import { config, paths } from "./config.mjs";
 import { git, commitSession } from "./worktrees.mjs";
 import { voiceSuffix } from "./age.mjs";
-import { scrubWorktree } from "./pseudonymity.mjs";
 import { saveTranscript } from "./transcripts.mjs";
 import { newSessionId } from "./auth.mjs";
 
@@ -95,14 +94,11 @@ function enqueue(kidId, job) {
   return run;
 }
 
-function create(kidId, profile, nickname) {
+function create(kidId, profile) {
   const dir = paths.kidRepo(kidId);
   const s = {
     kidId,
     dir,
-    // Held only to scrub it back OUT of anything the model wrote. It is never
-    // sent to the model, never written to git, and never leaves this process.
-    nickname,
     id: newSessionId(),
     queue: [],
     wake: null,
@@ -169,11 +165,11 @@ export function sessionAgeMs(kidId) {
  * onNewSession fires when this call had to create a session (so the caller
  * can count it against the daily cap).
  */
-export function ask(kidId, text, { onNewSession, profile, nickname } = {}) {
+export function ask(kidId, text, { onNewSession, profile } = {}) {
   return enqueue(kidId, async () => {
     let s = sessions.get(kidId);
     if (!s) {
-      s = create(kidId, profile, nickname);
+      s = create(kidId, profile);
       if (onNewSession) await onNewSession();
     }
     s.userTurns += 1;
@@ -256,16 +252,6 @@ async function retireNow(s, why) {
     // destroyed the moment a worktree is rebuilt from its branch. A session
     // is the unit of learning, so the app commits it here, once, after the
     // agent has stopped writing.
-    // A child can say their own name mid-conversation and the model can copy
-    // it into the journal. Scrub BEFORE the session commit so the name is
-    // never in a committed tree at all.
-    try {
-      const { hits } = scrubWorktree(s.dir, s.nickname);
-      if (hits) console.log(`[whyzr] redacted ${hits} identifying mention(s) for ${s.kidId}`);
-    } catch (err) {
-      console.error(`[whyzr] redaction failed for ${s.kidId}: ${err.message}`);
-    }
-
     try {
       const hash = commitSession(s.dir, `${s.id}, ${s.userTurns} turns, ended ${why}`);
       if (hash) console.log(`[whyzr] committed session learning for ${s.kidId}: ${hash}`);

@@ -295,7 +295,6 @@ async function layer1() {
     const stage1 = `
       import { provisionChild, commitSession, restoreOriginal, git, deleteChild,
                rebuildMissingWorktrees, withChildLock, isChildLocked } from "./server/worktrees.mjs";
-      import { scrubWorktree } from "./server/pseudonymity.mjs";
       import { ageProfile, voiceSuffix } from "./server/age.mjs";
       import { paths } from "./server/config.mjs";
       import { readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
@@ -316,11 +315,6 @@ async function layer1() {
       const cleanAfter = git(a, ["status", "--porcelain"]) === "";
       const diverge = git(paths.agentRepo(), ["diff", "child-evalA", "child-evalB", "--", "skills/"]);
 
-      // A name the child let slip must not survive into a commit.
-      writeFileSync(join(a, "memory/MEMORY.md"), "## x\\n\\nZephyrina saw the shadow move.\\n");
-      scrubWorktree(a, "Zephyrina");
-      commitSession(a, "evalA redact");
-      const nameInHistory = git(paths.agentRepo(), ["log", "-p", "child-evalA", "--", "memory/"]).includes("Zephyrina");
 
       // Invariant 4: destroy the worktree, keep the branch, rebuild.
       rmSync(a, { recursive: true, force: true });
@@ -347,7 +341,7 @@ async function layer1() {
         .split("\\n").filter((x) => x.startsWith("child-eval")).length === 0;
 
       console.log(JSON.stringify({ dirtyBefore, cleanAfter,
-        diverge: /^[-+]confidence/m.test(diverge), nameInHistory, rebuilt,
+        diverge: /^[-+]confidence/m.test(diverge), rebuilt,
         secondBlocked, worktreeCleanWhileLocked, lockReleased, ageIsParam, gone }));
     `;
     let s1 = {};
@@ -364,7 +358,6 @@ async function layer1() {
       ["gitagent leaves skill stats uncommitted (the gap this app fills)", s1.dirtyBefore],
       ["the app commits a session's learning to the child's branch", s1.cleanAfter],
       ["two children on the same repo diverge in skills/", s1.diverge],
-      ["a name in the journal never reaches committed history", s1.nameInHistory === false],
       ["a deleted worktree rebuilds from its branch with learning intact", s1.rebuilt],
       ["a second writer for the same child is blocked", s1.secondBlocked],
       ["the session lock does not dirty the worktree", s1.worktreeCleanWhileLocked],

@@ -310,7 +310,6 @@ async function handle(req, res, url) {
       const out = await sessions.ask(kidId, trimmed, {
         onNewSession: () => caps.noteSessionStart(kidId),
         profile: ageProfile(registry.getKid(kidId)?.age),
-        nickname: registry.getKid(kidId)?.nickname,
       });
       await caps.addSpend(kidId, out.deltaUsd, out.deltaTokens);
       return json(res, 200, { reply: out.reply, turns: out.turns });
