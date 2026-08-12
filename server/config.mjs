@@ -101,6 +101,11 @@ export const paths = {
   kidsDir: () => join(config.dataDir, "kids"),
   kidRepo: (id) => join(config.dataDir, "kids", id),
   transcriptsDir: (id) => join(config.dataDir, "transcripts", id),
+  // The agent repo: a clone of the source with every remote stripped. All
+  // child branches and worktrees live here, never in the source repository,
+  // so children's data can never be pushed to the public GitHub repo and
+  // the developer's own origin stays intact.
+  agentRepo: () => join(config.dataDir, "agent-repo"),
 };
 
 export function ensureDataDirs() {
