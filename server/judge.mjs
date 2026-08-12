@@ -42,6 +42,16 @@ function judgeSoul() {
 export const judgeConfigured = () => Boolean(process.env.GOOGLE_API_KEY);
 
 /**
+ * Token accounting for the judge, so spend can be reported as a measured
+ * number rather than an estimate. The seeding script prints it; the server
+ * folds it into the daily budget, because the judge is a second model call
+ * per session and HANDOFF section 5 requires it to be counted.
+ */
+const usage = { calls: 0, inputTokens: 0, outputTokens: 0, tier: null };
+export const judgeUsage = () => ({ ...usage });
+export const resetJudgeUsage = () => Object.assign(usage, { calls: 0, inputTokens: 0, outputTokens: 0 });
+
+/**
  * One Gemini call. Returns parsed JSON, or throws. Deliberately small: the
  * judge does two things and both are a single turn with no tools.
  */
@@ -90,6 +100,14 @@ async function ask(systemPrompt, userPrompt, { timeoutMs = 20_000 } = {}) {
       throw err;
     }
     const data = await res.json();
+    const u = data?.usageMetadata || {};
+    usage.calls += 1;
+    usage.inputTokens += Number(u.promptTokenCount || 0);
+    usage.outputTokens += Number(u.candidatesTokenCount || 0);
+    // "standard" means billing is enabled. Worth capturing: HANDOFF 2.4
+    // forbids the free tier for any session involving a real child, because
+    // free-tier content is used to improve Google's products.
+    if (u.serviceTier) usage.tier = u.serviceTier;
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
     return JSON.parse(text);
   } finally {

@@ -33,7 +33,7 @@ import { join } from "node:path";
 import { REPO_ROOT, paths } from "../server/config.mjs";
 import { provisionChild, commitSession, deleteChild, git } from "../server/worktrees.mjs";
 import { commitToMove, readMoves, successRate } from "../server/moves.mjs";
-import { deriveTarget, grade } from "../server/judge.mjs";
+import { deriveTarget, grade, judgeUsage } from "../server/judge.mjs";
 import { applyVerdict, logVerdict } from "../server/outcomes.mjs";
 
 // .env for local runs; the host environment always wins.
@@ -184,12 +184,26 @@ async function childAnswer(child, question, move) {
   });
   if (!res.ok) throw new Error(`child model ${res.status}: ${(await res.text()).slice(0, 160)}`);
   const data = await res.json();
+  childUsage.calls += 1;
+  childUsage.inputTokens += Number(data.usage?.input_tokens || 0);
+  childUsage.outputTokens += Number(data.usage?.output_tokens || 0);
   return (data.content?.[0]?.text || "").trim();
 }
 
 // Targets depend only on (question, age), and the judge freezes one per
 // session, so deriving the same one repeatedly would burn calls to produce
 // identical text. Cached across sessions; stated plainly rather than hidden.
+const childUsage = { calls: 0, inputTokens: 0, outputTokens: 0 };
+
+// Published per-million-token rates for the two models used here. Kept as
+// data, with the source named, so the reported cost is a calculation anyone
+// can check rather than a number to trust.
+const RATES = {
+  child: { in: 1.00, out: 5.00, label: "claude-haiku-4-5" },
+  judge: { in: 0.10, out: 0.40, label: "gemini-3.5-flash-lite" },
+};
+const dollars = (u, r) => (u.inputTokens / 1e6) * r.in + (u.outputTokens / 1e6) * r.out;
+
 const targetCache = new Map();
 async function frozenTarget(question, age) {
   const key = `${age}:${question}`;
@@ -272,6 +286,22 @@ const [a, b] = results.map((r) => `child-${r.child.id}`);
 const diff = git(paths.agentRepo(), ["diff", a, b, "--", "skills/"]);
 console.log(diff.split("\n").filter((l) => /^diff --git|^[-+](confidence|usage_count|success_count|failure_count)/.test(l))
   .map((l) => "  " + l).join("\n") || "  (no divergence yet)");
+
+line("What this run cost");
+{
+  const j = judgeUsage();
+  const cc = dollars(childUsage, RATES.child);
+  const jc = dollars(j, RATES.judge);
+  const row = (label, u, cost) =>
+    console.log(`  ${label.padEnd(24)} ${String(u.calls).padStart(3)} calls  ` +
+      `${String(u.inputTokens).padStart(7)} in  ${String(u.outputTokens).padStart(6)} out   $${cost.toFixed(4)}`);
+  row(RATES.child.label + " (child)", childUsage, cc);
+  row(RATES.judge.label + " (judge)", j, jc);
+  console.log(`  ${"TOTAL".padEnd(24)} ${String(childUsage.calls + j.calls).padStart(3)} calls` +
+    `${" ".repeat(24)}$${(cc + jc).toFixed(4)}`);
+  console.log(`  judge service tier: ${j.tier || "unknown"}` +
+    (j.tier === "standard" ? " (billing enabled, not the free tier)" : ""));
+}
 
 line("Provenance");
 console.log(`  branches: ${a}, ${b}  (never merged to main, never a real child)`);
