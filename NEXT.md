@@ -26,6 +26,20 @@ was wrong and why. Current state: 60/60 machinery checks, the loop is closed
 (judge -> verdict -> confidence -> commit), and FEEDBACK.md carries 21
 findings.
 
+UNVERIFIED, and it should be the next thing done: RULES.md was restructured
+(163 -> 146 lines, rationale moved into git history) and layer 1 passes at
+83/83, but the BEHAVIOURAL suite could not run afterwards because both model
+APIs were unreachable from this machine (connect timeouts to
+api.anthropic.com and generativelanguage.googleapis.com; GitHub was fine, so
+it was not general connectivity). The trim dropped no instruction, 43
+bullets became 42, but that is an argument and not evidence. Run:
+
+    node evals/run-evals.mjs --layer2      # ~$0.13
+
+and expect 21/21. If a criterion regresses, the removed wording was
+load-bearing: restore that specific line rather than reverting the whole
+restructure.
+
 Remaining, and NOT started:
 - The tutor calling the judge as a tool to control grading TIMING (design
   section 2). Grading currently runs when the session retires. The verdict
