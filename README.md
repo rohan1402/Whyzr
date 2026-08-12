@@ -186,7 +186,7 @@ Two layers, one command each.
 Layer 1 exercises the machinery against the real gitagent runtime with a
 scripted mock LLM (zero API cost): hooks block what they must, journal
 saves become commits, tools fire, a session's learning reaches a commit,
-and two children on the same repo genuinely diverge. 40 of 40 checks
+and two children on the same repo genuinely diverge. 78 of 78 checks
 pass, including regression
 tests from two independent security audits of this repo: allowlist
 command chaining, case-insensitive filesystem reads, guard fail-closed
