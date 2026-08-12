@@ -101,8 +101,40 @@ export function selectMove(dir) {
   }
 
   let best = moves[0];
-  for (const m of moves) if (successRate(m) > successRate(best)) best = m;
+  for (const m of moves) if (beats(m, best)) best = m;
   return { name: best.name, why: "highest smoothed success rate", rate: successRate(best) };
+}
+
+/**
+ * Is `a` a better choice than `b`?
+ *
+ * The tie-break is the interesting part, and it was earned by a seeded run.
+ * The first version compared rates with `>` and kept the incumbent on a tie,
+ * and because moves are iterated in name order, ties silently resolved
+ * alphabetically. Ties are not rare either: with Laplace smoothing a move
+ * that is 1-for-1 and another that is 1-for-1 sit at exactly the same rate,
+ * which is the normal state of affairs right after the cold-start phase.
+ *
+ * The result, straight from the seeded data: for a child whose profiled
+ * strengths were predict-first and observe-recall, `decompose` tied
+ * predict-first at 0.667 on session 7, won the tie on the letter D, and then
+ * held the lead for FOURTEEN consecutive sessions. predict-first was tried
+ * once. The system was not measuring that child, it was measuring the
+ * alphabet.
+ *
+ * Breaking ties toward the LEAST-TRIED move fixes it and costs nothing: it
+ * is still deterministic, so the evals stay exact, and it is not the random
+ * epsilon exploration that design section 6 fix 1b rejected on its own
+ * simulation evidence. It only decides cases where the evidence genuinely
+ * does not, and in exactly those cases it buys another sample of whichever
+ * move we know least about.
+ */
+function beats(a, b) {
+  const ra = successRate(a);
+  const rb = successRate(b);
+  if (ra !== rb) return ra > rb;
+  if (a.usage_count !== b.usage_count) return a.usage_count < b.usage_count;
+  return a.name < b.name; // total order, so selection never depends on readdir
 }
 
 /**
