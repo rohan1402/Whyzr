@@ -575,28 +575,37 @@ async function layer1() {
     `;
     let race = {};
     try {
-      // Provision once up front so both workers start from a real worktree.
+      // Provision once up front so both workers start from a real worktree,
+      // and record the dangling-object count BEFORE the race. A bare clone
+      // made with --no-hardlinks copies unreachable objects from the source
+      // repo wholesale, so the agent repo starts with dozens of dangling
+      // commits that have nothing to do with us. Only NEW ones are evidence
+      // of a lost update.
+      const danglingCount = () => Number(execSync(
+        `cd ${scratch}/agent-repo && git fsck --no-progress 2>/dev/null | grep -c "dangling commit" || true`,
+        { encoding: "utf8", shell: "/bin/bash" }).trim());
       execSync(`WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e 'import("./server/worktrees.mjs").then(m => m.provisionChild("evalrace"))'`,
         { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
+      const danglingBefore = danglingCount();
       const one = `WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${worker.replace(/'/g, "'\\''")}'`;
       execSync(`${one} A & ${one} B & wait`, { cwd: ROOT, encoding: "utf8", stdio: "pipe", shell: "/bin/bash" });
       const raw = execSync(
         `WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch} node --input-type=module -e '` +
         `import { git } from "./server/worktrees.mjs"; import { paths } from "./server/config.mjs";` +
         `const log = git(paths.kidRepo("evalrace"), ["log", "--oneline"]).split("\\n");` +
-        `const fsck = git(paths.agentRepo(), ["fsck", "--no-progress"], { stdio: "pipe" });` +
         `console.log(JSON.stringify({ commits: log.filter((l) => l.includes("race ")).length,` +
-        ` clean: git(paths.kidRepo("evalrace"), ["status", "--porcelain"]) === "", dangling: /dangling commit/.test(fsck) }));'`,
+        ` clean: git(paths.kidRepo("evalrace"), ["status", "--porcelain"]) === "" }));'`,
         { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim();
       race = JSON.parse(raw.split("\n").filter((l) => l.startsWith("{")).pop());
+      race.newDangling = danglingCount() - danglingBefore;
     } catch (err) { race = { error: String(err.stderr || err.message).slice(-300) }; }
 
     check("stage2: 12 commits from 2 concurrent processes all landed",
       race.commits === 12, JSON.stringify(race));
     check("stage2: concurrent writers left the worktree clean",
       race.clean === true, JSON.stringify(race));
-    check("stage2: concurrent writers produced no dangling commits",
-      race.dangling === false, JSON.stringify(race));
+    check("stage2: concurrent writers orphaned no commits",
+      race.newDangling === 0, JSON.stringify(race));
 
     // Fix 3: promotion carries the move, never the evidence.
     const promo = `

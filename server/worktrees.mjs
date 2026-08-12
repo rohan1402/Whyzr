@@ -86,8 +86,8 @@ export function ensureAgentRepo() {
   if (remotes.length) {
     console.log(`[whyzr] stripped remote(s) [${remotes.join(", ")}] from the agent repo; no child can push anywhere`);
   }
-  git(agent, ["config", "user.name", "Whyzr"]);
-  git(agent, ["config", "user.email", "whyzr@localhost"]);
+  setConfigOnce(agent, "user.name", "Whyzr");
+  setConfigOnce(agent, "user.email", "whyzr@localhost");
   return agent;
 }
 
@@ -149,6 +149,36 @@ function safeRev(dir, ref) {
   try { return git(dir, ["rev-parse", "--short", ref], { stdio: "pipe" }); } catch { return "none"; }
 }
 
+/**
+ * Set a git config value only if it is not already what we want.
+ *
+ * `git config` takes its own lockfile on the config file, so two processes
+ * writing the same value at the same moment produce
+ *
+ *   error: could not lock config file config: File exists
+ *
+ * and one of them exits non-zero. Because ensureAgentRepo runs on EVERY
+ * provisionChild, that turned a redeploy (two instances booting against one
+ * volume, which is the normal case, not an exotic one) into a crash before
+ * the child lock was ever reached. Found by the two-process eval, which
+ * initially looked like lost commits and was actually a dead worker.
+ *
+ * Reading first makes the common path a no-op, and the write is tolerant
+ * because losing this race is harmless: the other process is setting the
+ * identical value.
+ */
+function setConfigOnce(dir, key, value) {
+  try {
+    if (git(dir, ["config", "--get", key], { stdio: "pipe" }) === value) return;
+  } catch { /* unset, fall through and set it */ }
+  try {
+    git(dir, ["config", key, value], { stdio: "pipe" });
+  } catch (err) {
+    // Only tolerate the concurrent-writer case; anything else is real.
+    if (!/could not lock config file/i.test(String(err.stderr || err.message))) throw err;
+  }
+}
+
 /** Throws unless the repo (and therefore every worktree) has no remotes. */
 export function assertNoRemotes(dir = paths.agentRepo()) {
   const remotes = git(dir, ["remote"]).split("\n").filter(Boolean);
@@ -195,8 +225,8 @@ export function provisionChild(childId) {
 
   // Commits made inside the worktree (journal saves, confidence updates,
   // parent rules edits) are authored by the app, not by a person.
-  git(dir, ["config", "user.name", "Whyzr"]);
-  git(dir, ["config", "user.email", "whyzr@localhost"]);
+  setConfigOnce(dir, "user.name", "Whyzr");
+  setConfigOnce(dir, "user.email", "whyzr@localhost");
 
   // Marks the state this child started from. "Restore original rules"
   // restores THIS, never the oldest version in history, which would undo
