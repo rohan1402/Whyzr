@@ -328,20 +328,42 @@ node scripts/seed.mjs --sessions 20 --reset
 git -C .whyzr-data/agent-repo diff child-seed-nova child-seed-pip -- skills/
 ```
 
-Two runs of 20 sessions each, 40 sessions total:
-
-| | Nova, 11 | Pip, 7 |
-|---|---|---|
-| Profiled strengths | predict-first, observe-recall | analogy-bridge, flip-it |
-| Where the system landed | `observe-recall` 15/15 | `flip-it` 10/12, `analogy-bridge` 3/4 |
-| Correct? | yes | yes |
-
 **Gradability: 38 of 40 sessions (95%)** produced a verdict; 2 were
 correctly unscored as having no settled answer ("why do we dream").
 Design section 9 calls this the single number that says whether the design
 works, and 95% is higher than expected. The question set is deliberately
 weighted toward the observable physical world, which is what the product
 optimises for, so treat it as a best case rather than a general rate.
+
+### The result that did not replicate
+
+The first draft of this section reported that the system correctly found
+both children's profiled strengths. Then the same script was run again, with
+identical code, and it found neither.
+
+| Run | Nova, 11 (strengths: predict-first, observe-recall) | Pip, 7 (strengths: analogy-bridge, flip-it) |
+|---|---|---|
+| A | `observe-recall` 15/15 — a strength | `flip-it` 10/12 — a strength |
+| B | `decompose` 15/15 — **neutral** | `observe-recall` 9/10 — **neutral** |
+
+Two identical-code runs, four children, two correct. That is 50%, and it
+sits right on the 60% convergence the simulation in **Limitations** predicts.
+Reporting run A alone would have been a cherry-pick, so both are here.
+
+**Why it happens is the more useful finding, and it points at the judge.**
+Run B graded 17 of 20 of Nova's sessions a success. The child model had been
+told that for a neutral move it should produce "a partial attempt that gets
+part of the way and stops short of the real reason", and the judge passed
+those anyway, sometimes saying so out loud:
+
+> success — "...despite her minor uncertainty about the microscopic mechanism"
+
+Design section 2 anticipated this exactly: *"if seeded runs come back with
+almost no failures, the judge is too soft. Not the tutor too good."* A
+lenient judge makes a neutral move score like a strong one, nothing
+separates, and selection settles on whichever move happened to be sampled
+first. The judge's constitution already says borderline is failure; it is
+not applying it strictly enough, and tightening it is the next change.
 
 Seeded children live on `child-seed-*` branches, are **never merged to
 main**, and never share a repo state with a real child.
