@@ -403,11 +403,14 @@ export function isChildLocked(childId) {
 export function deleteChild(childId) {
   const dir = paths.kidRepo(childId);
   const branch = childBranch(childId);
-  try { git(paths.agentRepo(), ["worktree", "remove", "--force", dir]); } catch { /* may not exist */ }
+  // stdio pipe throughout: deleting a child who does not exist is a normal
+  // call (the seeding script's --reset does it every run), and git's
+  // "not a working tree" / "branch not found" on stderr reads like a crash.
+  try { git(paths.agentRepo(), ["worktree", "remove", "--force", dir], { stdio: "pipe" }); } catch { /* may not exist */ }
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   pruneWorktrees();
-  try { git(paths.agentRepo(), ["branch", "-D", branch]); } catch { /* may not exist */ }
-  try { git(paths.agentRepo(), ["tag", "-d", templateTag(childId)]); } catch { /* may not exist */ }
+  try { git(paths.agentRepo(), ["branch", "-D", branch], { stdio: "pipe" }); } catch { /* may not exist */ }
+  try { git(paths.agentRepo(), ["tag", "-d", templateTag(childId)], { stdio: "pipe" }); } catch { /* may not exist */ }
   try {
     git(paths.agentRepo(), ["reflog", "expire", "--expire=now", "--all"]);
     git(paths.agentRepo(), ["gc", "--prune=now", "--quiet"]);
