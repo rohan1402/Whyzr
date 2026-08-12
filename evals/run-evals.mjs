@@ -464,7 +464,10 @@ async function layer1() {
       const conf = () => readFileSync(join(d, "skills/predict-first/SKILL.md"), "utf8")
         .match(/^confidence: (.*)$/m)[1].trim();
 
-      const noKey = !judgeConfigured();
+      // A deliberately invalid key: any real network call would throw, so a
+      // clean "failure" from these paths PROVES no model was consulted.
+      // (Blanking the var does not work: config.mjs backfills it from .env.)
+      const dummyKey = process.env.GOOGLE_API_KEY === "eval-dummy-not-a-key" && judgeConfigured();
       const gu = gaveUp();
       // Empty answer must resolve WITHOUT a model call; with no key set, a
       // call would throw.
@@ -489,7 +492,7 @@ async function layer1() {
       const log = readFileSync(join(d, "verdicts.md"), "utf8");
 
       console.log(JSON.stringify({
-        noKey,
+        dummyKey,
         giveUpIsFailure: gu.verdict === "failure",
         emptyIsFailure: empty.verdict === "failure",
         ungradableApplied: ung.applied,
@@ -505,14 +508,14 @@ async function layer1() {
     try {
       // GOOGLE_API_KEY deliberately blanked: these paths must never call out.
       const raw = execSync(
-        `WHYZR_OPEN_DEV=1 GOOGLE_API_KEY= WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${jud.replace(/'/g, "'\\''")}'`,
+        `WHYZR_OPEN_DEV=1 GOOGLE_API_KEY=eval-dummy-not-a-key WHYZR_DATA_DIR=${scratch} node --input-type=module -e '${jud.replace(/'/g, "'\\''")}'`,
         { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim();
       s3 = JSON.parse(raw.split("\n").filter((l) => l.startsWith("{")).pop());
     } catch (err) { s3 = { error: String(err.stderr || err.message).slice(-400) }; }
 
     const judgeChecks = [
-      ["the give-up control is a failure, with no judge call", s3.noKey === true && s3.giveUpIsFailure === true],
-      ["an empty final answer is a failure, with no judge call", s3.emptyIsFailure === true],
+      ["the give-up control is a failure, with no judge call", s3.dummyKey === true && s3.giveUpIsFailure === true],
+      ["an empty final answer is a failure, with no judge call", s3.dummyKey === true && s3.emptyIsFailure === true],
       ["not gradeable changes nothing at all", s3.ungradableApplied === false && s3.ungradableUnchanged === true],
       ["a failure drops confidence by 0.2 (the framework's math)", s3.failureDrops === true],
       ["a success raises confidence", s3.successRaises === true],
