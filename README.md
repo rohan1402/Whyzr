@@ -296,6 +296,56 @@ The eval runner (evals/run-evals.mjs) drives the same runtime two ways:
 a scripted mock LLM for machinery, the real model plus an LLM judge for
 behavior.
 
+## The seeded numbers, and exactly what they are
+
+Every confidence number you can see in this repo's child branches is
+**seeded**. Real sessions in a one-week build cannot move confidence far
+enough to show learning, so two fictional children were run through the
+real loop. Stating this plainly matters more than the numbers do.
+
+What is real in the seeded data:
+
+- the move selection (the actual selector, on the actual stats)
+- the judge (Gemini, a different model family from the tutor, deriving an
+  age-appropriate target up front and grading blind)
+- the confidence arithmetic (gitagent's own `adjustConfidence`)
+- every commit
+
+What is simulated: the child. Their answers are written by a model in
+character, from a profile that says which reasoning moves suit them. The
+model writing the answers **never sees the frozen target**, or it would
+parrot it and the numbers would measure nothing.
+
+What is not run at all: the multi-turn tutoring conversation. The judge
+grades blind on the final answer, so a transcript cannot change any number,
+and running one would cost about sixty times more to produce identical data.
+The real tutor is exercised by the layer-2 behavioural evals instead.
+
+**It demonstrates the machinery. It is not evidence that children learn.**
+
+```
+node scripts/seed.mjs --sessions 20 --reset
+git -C .whyzr-data/agent-repo diff child-seed-nova child-seed-pip -- skills/
+```
+
+Two runs of 20 sessions each, 40 sessions total:
+
+| | Nova, 11 | Pip, 7 |
+|---|---|---|
+| Profiled strengths | predict-first, observe-recall | analogy-bridge, flip-it |
+| Where the system landed | `observe-recall` 15/15 | `flip-it` 10/12, `analogy-bridge` 3/4 |
+| Correct? | yes | yes |
+
+**Gradability: 38 of 40 sessions (95%)** produced a verdict; 2 were
+correctly unscored as having no settled answer ("why do we dream").
+Design section 9 calls this the single number that says whether the design
+works, and 95% is higher than expected. The question set is deliberately
+weighted toward the observable physical world, which is what the product
+optimises for, so treat it as a best case rather than a general rate.
+
+Seeded children live on `child-seed-*` branches, are **never merged to
+main**, and never share a repo state with a real child.
+
 ## Limitations, honestly
 
 - Behavioral rules are prompt-enforced and eval-verified, but only the
@@ -312,6 +362,24 @@ behavior.
 - The journal-on-session-end guarantee depends on the model completing
   the wrap-up within 90 seconds; the interface logs whether it did.
 - English only for now.
+- **Selection exploits more than it explores, and this is measurable.**
+  After every move has been tried once, the selector always takes the best
+  smoothed success rate, because design section 6 rejected random epsilon
+  exploration on its own simulation evidence. The consequence is that a
+  move with more samples and a decent record outranks a rarely-sampled
+  better one and is never revisited. In 400 simulated trials (5 moves, 40
+  sessions, true rates 0.85/0.75/0.55/0.25/0.25) the selector converged on
+  the genuinely best move 60% of the time. The first seeded run made this
+  concrete: one child settled on a neutral move for 14 consecutive sessions
+  because it won a tie alphabetically. Ties now break toward the
+  least-tried move, which fixed that case, but 40% is still 40%. Separating
+  a 0.55 move from a 0.50 one needs hundreds of sessions regardless of
+  formula. It is a sample-size wall, not an algorithm bug.
+- The judge is one model's opinion. Grades are not perfectly repeatable,
+  and judge disagreement is noise rather than bias. Borderline answers are
+  deliberately scored as failures, because confidence only moves
+  meaningfully on failure and a soft judge produces a system where nothing
+  fails and nothing is learned.
 - Tested on gitagent 2.0.2; workarounds for its rough edges are
   documented in FEEDBACK.md and may become unnecessary upstream.
 
