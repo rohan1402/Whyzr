@@ -51,6 +51,23 @@ const usage = { calls: 0, inputTokens: 0, outputTokens: 0, tier: null };
 export const judgeUsage = () => ({ ...usage });
 export const resetJudgeUsage = () => Object.assign(usage, { calls: 0, inputTokens: 0, outputTokens: 0 });
 
+// Published per-million-token rates for the judge model. HANDOFF section 5:
+// "the judge is a second model call per session, so budget accounting must
+// include it". Without this the daily budget kill switch only ever sees the
+// tutor, and the judge spends alongside it invisibly.
+const RATE_IN_PER_M = Number(process.env.WHYZR_JUDGE_RATE_IN || 0.10);
+const RATE_OUT_PER_M = Number(process.env.WHYZR_JUDGE_RATE_OUT || 0.40);
+
+/** Dollar cost of one call's token usage. */
+export function judgeCostUsd(u) {
+  if (!u) return 0;
+  return (Number(u.inputTokens || 0) / 1e6) * RATE_IN_PER_M
+       + (Number(u.outputTokens || 0) / 1e6) * RATE_OUT_PER_M;
+}
+
+/** Zero usage, for the paths that deliberately make no model call. */
+export const NO_USAGE = { inputTokens: 0, outputTokens: 0 };
+
 /**
  * One Gemini call. Returns parsed JSON, or throws. Deliberately small: the
  * judge does two things and both are a single turn with no tools.
@@ -116,15 +133,19 @@ async function ask(systemPrompt, userPrompt, { timeoutMs = 20_000 } = {}) {
     }
     const data = await res.json();
     const u = data?.usageMetadata || {};
+    const callUsage = {
+      inputTokens: Number(u.promptTokenCount || 0),
+      outputTokens: Number(u.candidatesTokenCount || 0),
+    };
     usage.calls += 1;
-    usage.inputTokens += Number(u.promptTokenCount || 0);
-    usage.outputTokens += Number(u.candidatesTokenCount || 0);
+    usage.inputTokens += callUsage.inputTokens;
+    usage.outputTokens += callUsage.outputTokens;
     // "standard" means billing is enabled. Worth capturing: HANDOFF 2.4
     // forbids the free tier for any session involving a real child, because
     // free-tier content is used to improve Google's products.
     if (u.serviceTier) usage.tier = u.serviceTier;
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    return JSON.parse(text);
+    return { body: JSON.parse(text), usage: callUsage };
   } finally {
     clearTimeout(timer);
   }
@@ -147,8 +168,9 @@ export async function deriveTarget(question, age) {
     `When gradable is false, target is "" and why_not says why the question ` +
     `has no settled answer. When gradable is true, why_not is "".`;
 
-  const out = await askWithBackoff(judgeSoul(), prompt);
+  const { body: out, usage: callUsage } = await askWithBackoff(judgeSoul(), prompt);
   return {
+    usage: callUsage,
     question,
     age,
     gradable: out.gradable === true,
@@ -167,13 +189,17 @@ export async function deriveTarget(question, age) {
  */
 export async function grade(frozen, finalAnswer) {
   if (!frozen?.gradable) {
-    return { verdict: "not gradeable", reason: frozen?.whyNot || "the question has no settled answer" };
+    // HANDOFF section 5: the ungradable path must SKIP the judge call rather
+    // than make it and discard the result. The gradability was already
+    // settled when the target was derived, so there is nothing to ask.
+    return { verdict: "not gradeable", usage: NO_USAGE,
+             reason: frozen?.whyNot || "the question has no settled answer" };
   }
   if (!String(finalAnswer || "").trim()) {
     // No answer is a failure by definition, and needs no model call. Design
     // section 2: "No answer produced means failure, and the judge is never
     // called." Saves a call and removes a chance for the judge to be kind.
-    return { verdict: "failure", reason: "the child produced no final answer" };
+    return { verdict: "failure", usage: NO_USAGE, reason: "the child produced no final answer" };
   }
 
   const prompt =
@@ -186,9 +212,9 @@ export async function grade(frozen, finalAnswer) {
     `"not gradeable" is not available here: this question was already ` +
     `established as having a settled answer.`;
 
-  const out = await askWithBackoff(judgeSoul(), prompt);
+  const { body: out, usage: callUsage } = await askWithBackoff(judgeSoul(), prompt);
   const verdict = out.verdict === "success" ? "success" : "failure";
-  return { verdict, reason: String(out.reason || "") };
+  return { verdict, usage: callUsage, reason: String(out.reason || "") };
 }
 
 /**
@@ -197,5 +223,5 @@ export async function grade(frozen, finalAnswer) {
  * flag, so it is impossible to accidentally route it through the model.
  */
 export function gaveUp() {
-  return { verdict: "failure", reason: "the child used the give-up control" };
+  return { verdict: "failure", usage: NO_USAGE, reason: "the child used the give-up control" };
 }

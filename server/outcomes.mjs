@@ -81,7 +81,10 @@ export function logVerdict(dir, entry) {
       "# Verdicts\n\n" +
       "One line per graded session. Written by the judge (a different model\n" +
       "family from the tutor), which sees only the question, the frozen\n" +
-      "target, and the child's final answer.\n\n");
+      "target, and the child's final answer.\n\n" +
+      "`turns` is recorded but is NOT part of any verdict. It exists so that\n" +
+      "grinding is visible: a move whose successes take fourteen turns each\n" +
+      "is winning by wearing the child down, not by teaching them.\n\n");
   }
   const conf = entry.after
     ? ` ${entry.move} ${entry.before.confidence} -> ${entry.after.confidence}`
@@ -90,7 +93,9 @@ export function logVerdict(dir, entry) {
     `- ${entry.date} **${entry.verdict}**${conf}\n` +
     `  - question: ${oneLine(entry.question)}\n` +
     `  - target: ${oneLine(entry.target)}\n` +
-    `  - reason: ${oneLine(entry.reason)}\n`);
+    `  - reason: ${oneLine(entry.reason)}\n` +
+    // Metadata, never a scoring input. See design section 2 on grinding.
+    `  - turns: ${Number(entry.turns) || 0}\n`);
   return LOG;
 }
 

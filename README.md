@@ -439,6 +439,15 @@ reasoning moves worked, and the judge's one-line reason for each verdict.
 capture exists for testing, is off by default (`SAVE_TRANSCRIPTS`), and the
 README claim only stays true because an eval asserts the default.
 
+**Which providers see what.** The tutor is Anthropic; the judge is Google
+Gemini and receives only the question, the frozen target answer, and the
+child's final answer, never the conversation. The judge runs on a **paid
+Google tier for any session involving a real child**, deliberately: Google's
+free tier reserves the right to use submitted content to improve its
+products, and a child's reasoning is not training data anyone consented to
+hand over. The app records the returned `serviceTier` so this is checkable
+rather than asserted.
+
 **Where:** on a branch named `child-<random-id>`, in a repository on the
 server that has had every git remote stripped. Nothing a child or parent does
 can reach this public repo. The nickname-to-id mapping lives in

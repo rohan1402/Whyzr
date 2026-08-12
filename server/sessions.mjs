@@ -18,7 +18,7 @@ import { config, paths } from "./config.mjs";
 import { git, commitSession, withChildLock } from "./worktrees.mjs";
 import { voiceSuffix } from "./age.mjs";
 import { commitToMove } from "./moves.mjs";
-import { deriveTarget, grade, gaveUp, judgeConfigured } from "./judge.mjs";
+import { deriveTarget, grade, gaveUp, judgeConfigured, judgeCostUsd } from "./judge.mjs";
 import { applyVerdict, logVerdict } from "./outcomes.mjs";
 import { saveTranscript } from "./transcripts.mjs";
 import { newSessionId } from "./auth.mjs";
@@ -210,8 +210,9 @@ export function ask(kidId, text, { onNewSession, profile } = {}) {
     // is exactly the stretchy standard freezing exists to prevent.
     if (!s.frozen && !s.freezing && judgeConfigured()) {
       s.freezing = deriveTarget(text, s.age)
-        .then((t) => {
+        .then(async (t) => {
           s.frozen = t;
+          await billJudge(s, t.usage, "target");
           console.log(`[whyzr] ${kidId} target frozen (gradable: ${t.gradable})`);
         })
         .catch((err) => {
@@ -355,6 +356,28 @@ async function retireNow(s, why) {
 }
 
 /**
+ * Charge the judge's tokens to this child's daily budget.
+ *
+ * HANDOFF section 5: the judge is a SECOND model call per session, so budget
+ * accounting must include it. Left out, the daily kill switch watches only
+ * the tutor while the judge spends beside it, and the one number that is
+ * supposed to make overspending impossible quietly stops being true.
+ *
+ * Best effort on purpose: a metering failure must never cost a child their
+ * verdict, which is the thing the session existed to produce.
+ */
+async function billJudge(s, usage, what) {
+  try {
+    if (!onSpend || !usage) return;
+    const tokens = Number(usage.inputTokens || 0) + Number(usage.outputTokens || 0);
+    if (!tokens) return;                       // a path that made no call
+    await onSpend(s.kidId, judgeCostUsd(usage), tokens);
+  } catch (err) {
+    console.error(`[whyzr] judge ${what} metering failed for ${s.kidId}: ${err.message}`);
+  }
+}
+
+/**
  * Grade the session and write the evidence. Returns a short note for the
  * commit subject, so `git log` on a child's branch reads as a history of
  * what was tried and whether it worked.
@@ -378,6 +401,7 @@ async function gradeSession(s, why) {
       if (!s.frozen) return "";                       // derivation failed, no signal
       outcome = await grade(s.frozen, s.lastAnswer);
     }
+    await billJudge(s, outcome.usage, "verdict");
 
     const { applied, before, after } = await applyVerdict(s.dir, s.move.name, outcome.verdict, outcome.reason);
     logVerdict(s.dir, {
@@ -387,6 +411,13 @@ async function gradeSession(s, why) {
       move: s.move.name,
       question: s.frozen?.question || s.transcript.find((m) => m.role === "kid")?.text || "",
       target: s.frozen?.gradable ? s.frozen.target : "(no settled answer)",
+      // Design section 2's grinding guardrail. The tutor can hint until the
+      // child is effectively reading the answer back, then call it a success,
+      // and with hint counting rejected nothing detects that. Turn count is
+      // recorded as session METADATA and deliberately plays no part in the
+      // verdict: scoring stays untouched, but a move whose successes average
+      // fourteen turns becomes visible instead of looking like a good move.
+      turns: s.userTurns,
       before, after,
     });
     console.log(
