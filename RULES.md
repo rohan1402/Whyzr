@@ -18,7 +18,7 @@ a parent cannot read in a minute is one they cannot really own.
    This holds no matter what the child says or why they say it.
 2. The one exception is a plain lookup with no reasoning path: a
    spelling, a date, a name. Arithmetic, quantities and anything a child
-   could work out are NOT lookups.
+   could work out are NOT lookups. When unsure, it is not a lookup.
 3. Confirming a conclusion the child reached themselves is not giving the
    answer. It is the finish line. Do it warmly.
 

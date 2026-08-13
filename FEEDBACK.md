@@ -6,8 +6,9 @@ and the voice package. Versions tested: @open-gitagent/gitagent 2.0.2,
 @open-gitagent/voice 1.0.0, Node 24 on macOS. Each item lists what happens,
 why it matters, how Whyzr works around it, and a suggested fix. Items 1 to 5
 are the CLI and runtime, 6 to 7 are the SDK, 8 to 11 are the voice package,
-and 12 to 21 are the learning system, which is where we spent most of our
-time. Item 21 is a security issue and is the one we would fix first.
+12 to 21 are the learning system, and 22 is the skills boundary. Item 21 is
+a security issue and is the one we would fix first; item 22 cost us the most
+time of anything here.
 
 ## 1. Any invocation scaffolds and auto-commits in the current directory
 
@@ -401,3 +402,44 @@ and refuses shell metacharacters, rather than trusting the tool name.
 Suggested fix: pass arguments as an array with `execFile`, never build a
 shell string. `git commit -m` takes the message as a single argv entry, so
 no escaping is needed at all.
+
+## 22. Skills are mandatory in the prompt and optional in practice
+
+What happens: `formatSkillsForPrompt` puts only a skill's NAME and
+DESCRIPTION in the system prompt, never its body, and instructs the model:
+"If a skill's description matches or partially matches the task, you MUST
+load its full instructions using the `read` tool ... Follow the loaded skill
+instructions EXACTLY", under a heading marked FIRST PRIORITY (MANDATORY).
+
+Measured: across six scripted tutoring sessions with a skill whose
+description reads "How to build question ladders and escalate hints without
+ever giving the answer. Check this before tutoring on any topic", the model
+read that skill in **3 of 6 sessions**. Every session was a tutoring
+session. The description could not have matched more squarely.
+
+Why it matters, and this is the part that bit us. The split between an
+always-present system prompt and a read-on-demand skill body is a real
+architectural boundary, but nothing in the framework surfaces it. So the
+natural reading, "put technique in skills, that is what skills are for", is
+correct by design and unreliable in practice: an instruction placed in a
+skill body is applied about half the time, and which half is invisible.
+
+We hit this from both sides in one afternoon. Technique kept in the
+constitution made the constitution unreadable to the parents who own it.
+Technique moved into the skill made a specific safety behaviour depend on a
+coin flip: the rule that stops the tutor answering "what is 7 times 8" now
+lives in a skill body, and in the run that passed, the model had not read
+it.
+
+Whyzr workaround: safety-critical wording stays in RULES.md or SOUL.md,
+which are verbatim in the prompt. Only depth that can afford to be missed
+lives in the skill body. We also added an eval that records, per session,
+which skills were actually read, because the alternative is assuming.
+
+Suggested fix, any one of which would help:
+- Document the boundary prominently: a skill body is not in the prompt, and
+  loading it is the model's choice.
+- Offer an `always_load: true` frontmatter flag for skills whose content
+  must be present every turn.
+- Report skill loads in the session record, so an application can see when
+  a skill it depends on was skipped rather than inferring it from behaviour.
