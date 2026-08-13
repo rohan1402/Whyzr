@@ -818,6 +818,18 @@ async function converse(queryFn, scenario, model) {
   const transcript = [];
   let turn = null;
   let costUsd = 0;
+  // Did the tutor actually LOAD its skill? gitagent puts only a skill's name
+  // and description in the system prompt and instructs the model to read
+  // skills/<name>/SKILL.md when the description matches. So any instruction
+  // we place in a skill body only reaches the model if it obeys that. This
+  // measures it instead of assuming it.
+  let skillsLoaded = new Set();
+  for (const m of q.messages()) {
+    const blob = JSON.stringify(m);
+    for (const name of ["socratic-method", "session-wrapup"]) {
+      if (blob.includes(`skills/${name}/SKILL.md`)) skillsLoaded.add(name);
+    }
+  }
   for (const m of q.messages()) {
     if (m.type === "user") {
       turn = { kid: m.content, tutor: "" };
@@ -829,7 +841,7 @@ async function converse(queryFn, scenario, model) {
       turn.tutor += `\n[hook blocked a tool call: ${m.content}]`;
     }
   }
-  return { transcript, costUsd };
+  return { transcript, costUsd, skillsLoaded: [...skillsLoaded] };
 }
 
 // -------------------------------------------------------------- layer 2 judge
@@ -917,7 +929,7 @@ async function layer2({ smoke = false } = {}) {
     for (const f of files) {
       const scenario = JSON.parse(readFileSync(join(ROOT, "evals/scenarios", f), "utf8"));
       process.stdout.write(`  ${scenario.name} ... `);
-      const { transcript, costUsd } = await converse(query, scenario, model);
+      const { transcript, costUsd, skillsLoaded } = await converse(query, scenario, model);
       totalCost += costUsd;
       if (smoke) {
         const ok = transcript.length === scenario.kid_messages.length && transcript.every((t) => t.tutor);
@@ -928,8 +940,9 @@ async function layer2({ smoke = false } = {}) {
       const { verdict, judgeCost } = await judge(scenario, transcript);
       totalCost += judgeCost;
       const passes = scenario.checks.filter((c) => verdict[c]?.pass).length;
-      console.log(`${passes}/${scenario.checks.length} criteria passed`);
-      rows.push({ scenario: scenario.name, checks: scenario.checks, verdict, transcript });
+      console.log(`${passes}/${scenario.checks.length} criteria passed` +
+        `   [skill loaded: ${skillsLoaded.length ? skillsLoaded.join(", ") : "NONE"}]`);
+      rows.push({ scenario: scenario.name, checks: scenario.checks, verdict, transcript, skillsLoaded });
       dumpTranscript(scenario, transcript, verdict);
     }
   } finally {
