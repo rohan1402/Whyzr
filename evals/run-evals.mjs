@@ -778,6 +778,32 @@ async function layer1() {
     } catch (err) { del.out = String(err.stdout || "") + String(err.stderr || ""); }
     check("stage2: the deletion script removes a child and verifies it", del.ok === true, del.out.slice(-300));
 
+    // A deletion that undoes itself is worse than one that fails loudly. The
+    // registry cache is per process, and the deletion script runs in a
+    // DIFFERENT process, so a running server used to resurrect a deleted
+    // child on its next write. Observed live during a restart.
+    const resurrect = `
+      import { writeFileSync, readFileSync } from "node:fs";
+      import * as registry from "./server/registry.mjs";
+      import { paths } from "./server/config.mjs";
+      const id = await registry.createKid({ nickname: "Ghost", age: 9, band: "middle", pinHash: "x" });
+      registry.read();                       // warm the cache, as a live server has
+      const p = paths.registry();
+      const disk = JSON.parse(readFileSync(p, "utf8"));
+      delete disk.kids[id];                  // another process deletes the row
+      writeFileSync(p, JSON.stringify(disk, null, 2));
+      await registry.update((reg) => { reg.global = { day: "x", spendUsd: 1 }; });
+      console.log(JSON.stringify({ survived: Object.keys(JSON.parse(readFileSync(p, "utf8")).kids).length }));
+    `;
+    let res = {};
+    try {
+      res = JSON.parse(execSync(`WHYZR_OPEN_DEV=1 WHYZR_DATA_DIR=${scratch}-res node --input-type=module -e '${resurrect.replace(/'/g, "'\\''")}'`,
+        { cwd: ROOT, encoding: "utf8", stdio: "pipe" }).trim().split("\n").filter((l) => l.startsWith("{")).pop());
+    } catch (err) { res = { error: String(err.stderr || err.message).slice(-200) }; }
+    check("stage2: a running server cannot resurrect a deleted child",
+      res.survived === 0, JSON.stringify(res));
+    rmSync(`${scratch}-res`, { recursive: true, force: true });
+
     rmSync(scratch, { recursive: true, force: true });
   }
   sh(`git checkout -q ${startBranch}`);

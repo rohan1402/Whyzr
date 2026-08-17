@@ -52,6 +52,19 @@ function persist() {
 /** Serialized read-modify-write. The mutator receives the live registry. */
 export function update(mutator) {
   const run = writeChain.then(() => {
+    // Re-read from disk before mutating. The in-memory cache is a READ
+    // optimisation, and this process is not the only writer:
+    // scripts/delete-child.sh removes a row from a separate process. Mutating
+    // a stale cache and persisting the whole thing silently RESURRECTS a
+    // deleted child, which is exactly what happened: a child deleted while
+    // the server was running came back on the next registry write, during
+    // shutdown. The deletion script had already printed "Verified: nothing
+    // remains", and it had been true when it said so.
+    //
+    // For a product whose deletion path is a promise to a parent, a delete
+    // that silently undoes itself is the worst possible failure, so writes
+    // are now always based on what is actually on disk.
+    cache = null;
     const reg = load();
     const result = mutator(reg);
     persist();
