@@ -355,6 +355,45 @@ async function layer1() {
       ["a one-word answer is not punished by the check", ho.acceptsShortAnswer],
     ]) check(`judge tool: ${name}`, ok === true, JSON.stringify(ho));
 
+    // The answer exists in this system, and exactly one path reveals it: the
+    // child pressing the give-up control, which costs them the session. That
+    // is enforced by code, not by asking the tutor nicely, so it is checked
+    // here rather than written as a rule the model could talk itself out of.
+    const soul = readFileSync(join(ROOT, "SOUL.md"), "utf8");
+    const rules = readFileSync(join(ROOT, "RULES.md"), "utf8");
+    const sess = readFileSync(join(ROOT, "server/sessions.mjs"), "utf8");
+
+    // 1. What the tutor is handed alongside the question must not include the
+    //    frozen target, or it would simply read the answer off disk.
+    const targetWrite = sess.match(/judge-target\.json[\s\S]{0,200}/);
+    check("answer: the tutor's target file carries the question only, never the answer",
+      Boolean(targetWrite) && /JSON\.stringify\(\{ question: t\.question \}/.test(targetWrite[0]),
+      targetWrite ? targetWrite[0].slice(0, 120) : "no write found");
+
+    // 2. And it could not read it even if that changed: dotfiles are blocked.
+    let dotVerdict = null;
+    try {
+      dotVerdict = JSON.parse(execSync("node hooks/guard.mjs", {
+        cwd: ROOT, encoding: "utf8",
+        input: JSON.stringify({ tool: "read", args: { path: ".judge-target.json" } }),
+      }).trim());
+    } catch { /* fail */ }
+    check("answer: the guard blocks the tutor reading the target file",
+      dotVerdict && dotVerdict.action === "block", JSON.stringify(dotVerdict));
+
+    // 3. The prompt the tutor runs on never contains a target either.
+    check("answer: no frozen target is written into the constitution or persona",
+      !/frozen target/i.test(soul + rules));
+
+    // 4. Only the give-up route hands it over, and it ends the session.
+    const app = readFileSync(join(ROOT, "server/app.mjs"), "utf8");
+    const giveupRoute = app.match(/api\/giveup[\s\S]{0,900}/);
+    check("answer: only the give-up route reveals it, and it ends the session",
+      Boolean(giveupRoute) && /out\.answer/.test(giveupRoute[0]) && /sessionEnded: true/.test(giveupRoute[0]),
+      giveupRoute ? "route found but shape changed" : "route missing");
+    check("answer: using it still records a failure against the move",
+      /gaveUp\(\)/.test(sess) && /s\.gaveUp = true/.test(sess));
+
     let verdictHook = null;
     try {
       verdictHook = JSON.parse(execSync("node hooks/guard.mjs", {
