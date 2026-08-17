@@ -118,8 +118,10 @@
      hover state, and sentence case. */
   #topbar {
     position: sticky; top: 0; z-index: 5;
-    width: 100%; display: flex; justify-content: space-between; align-items: center;
-    gap: 10px; padding: 10px clamp(10px, 3vw, 18px);
+    /* Same column as the conversation, so the controls read as belonging to
+       it rather than being pinned to the far corners of a wide monitor. */
+    width: min(680px, 94vw); display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 10px 4px;
     background: linear-gradient(180deg, rgba(214,236,250,.96), rgba(214,236,250,0));
     backdrop-filter: blur(6px);
   }
