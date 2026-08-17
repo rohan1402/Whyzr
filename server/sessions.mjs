@@ -277,17 +277,43 @@ export function ask(kidId, text, { onNewSession, profile } = {}) {
  * feed. Enqueued so it runs AFTER any in-flight ask. Callers do not await.
  */
 /**
- * The give-up control. Marks the session a failure and retires it. A button
- * in the UI, never keyword detection on the child's text: "just tell me"
- * has too many phrasings to match and a classifier would add a call and a
- * failure mode. Returns false if there was no live session to give up on.
+ * The give-up control. A button in the UI, never keyword detection on the
+ * child's text: "just tell me" has too many phrasings to match, and a
+ * classifier would add a call and a failure mode.
+ *
+ * THIS IS THE ONE PLACE THE ANSWER IS GIVEN, and it is deliberate. A child
+ * who is genuinely stuck and gets nothing learns that this thing will not
+ * help them, which is a worse lesson than the answer. Real teachers tell you
+ * eventually.
+ *
+ * What keeps it honest is the cost, not a refusal:
+ *   - it ENDS the session, so answers cost one session each against the
+ *     daily cap, rather than being free to farm
+ *   - it logs a failure against the move that was being tried
+ *   - the parent sees it in the verdict log
+ *
+ * The answer itself is the judge's frozen target, derived at session start
+ * and already pitched at this child's age, so no extra model call is needed
+ * and the child gets "air scatters blue light more than red" rather than a
+ * paragraph about Rayleigh scattering.
+ *
+ * Returns { had, question, answer, unsettled }.
  */
-export function giveUp(kidId) {
+export async function giveUp(kidId) {
   const s = sessions.get(kidId);
-  if (!s || s.retired) return false;
+  if (!s || s.retired) return { had: false };
   s.gaveUp = true;
+  // The target may still be in flight on a fast give-up. Wait for it rather
+  // than telling a child we cannot help when we are two seconds away.
+  if (s.freezing) { try { await s.freezing; } catch { /* fall through */ } }
+  const frozen = s.frozen;
   retire(kidId, "gave up");
-  return true;
+  return {
+    had: true,
+    question: frozen?.question || "",
+    answer: frozen?.gradable ? String(frozen.target || "") : "",
+    unsettled: Boolean(frozen && !frozen.gradable),
+  };
 }
 
 export function retire(kidId, why) {

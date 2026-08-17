@@ -326,21 +326,28 @@ async function handle(req, res, url) {
   if (req.method === "POST" && pathname === "/api/giveup") {
     const kidId = requireKid(req, res);
     if (!kidId) return;
-    const had = sessions.giveUp(kidId);
-    return json(res, 200, {
-      ok: true,
-      had,
-      // Deliberately does NOT contain the answer. RULES rule 1 holds "no
-      // matter what the child says or why they say it", and a button that
-      // hands over answers would make the whole product a formality. What a
-      // stuck child needs instead is a dignified way out and somewhere real
-      // to take the question.
-      reply: "That's okay, and stopping is not the same as failing. Some mysteries " +
-        "take more than one day. Try asking a grown-up about this one, and come " +
-        "back and tell me what you found out. Or ask me a brand new why question " +
-        "whenever you like.",
-      sessionEnded: true,
-    });
+    const out = await sessions.giveUp(kidId);
+    // The ONE place an answer is handed over, and it costs the child their
+    // session to get it. A stuck child who receives nothing learns the thing
+    // will not help them, which is a worse lesson than the answer.
+    let reply;
+    if (out.answer) {
+      reply =
+        `Okay! Here it is: ${out.answer}\n\n` +
+        "Read that again in a minute and see if it clicks. Ask me a brand new " +
+        "why question whenever you like.";
+    } else if (out.unsettled) {
+      reply =
+        "Here's the thing: nobody actually knows the answer to that one yet, " +
+        "not even scientists. That is why it felt so hard. It is a brilliant " +
+        "question to keep in your pocket. Ask me another one whenever you like.";
+    } else {
+      reply =
+        "That's okay, and stopping is not the same as failing. I could not get " +
+        "this one straight in my head either. Try asking a grown-up, and come " +
+        "back and tell me what you found out.";
+    }
+    return json(res, 200, { ok: true, had: out.had, reply, sessionEnded: true });
   }
 
   if (req.method === "POST" && (pathname === "/api/new" || pathname === "/api/bye")) {
