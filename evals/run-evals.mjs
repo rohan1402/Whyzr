@@ -387,7 +387,13 @@ async function layer1() {
 
     // 4. Only the give-up route hands it over, and it ends the session.
     const app = readFileSync(join(ROOT, "server/app.mjs"), "utf8");
-    const giveupRoute = app.match(/api\/giveup[\s\S]{0,900}/);
+    // Bound the slice by the NEXT route rather than a character count. A
+    // fixed window silently stops asserting the moment the handler grows,
+    // which is what happened: the window was 900 and sessionEnded sat at
+    // 1166, so the check failed on its own arithmetic rather than on the code.
+    const giveupStart = app.indexOf("api/giveup");
+    const giveupRoute = giveupStart === -1 ? null
+      : [app.slice(giveupStart, app.indexOf("/api/new", giveupStart))];
     check("answer: only the give-up route reveals it, and it ends the session",
       Boolean(giveupRoute) && /out\.answer/.test(giveupRoute[0]) && /sessionEnded: true/.test(giveupRoute[0]),
       giveupRoute ? "route found but shape changed" : "route missing");
