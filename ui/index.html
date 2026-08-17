@@ -401,10 +401,13 @@
     epoch += 1;
     busy = false;
     sessionOver = true;
-    const out = await post("/api/giveup");
-    // Warm, never scolding. The child is told this was an honest thing to
-    // do, because the score is not their business and the habit of asking is.
-    bubble("tutor", (out && out.reply) || "That's okay. Some mysteries take more than one day.");
+    // post() resolves to { status, data }, so the body is out.data. Reading
+    // out.reply here was always undefined and always fell through to the
+    // fallback, which meant the child pressed a button promising the answer
+    // and got a shrug. The server was returning the answer correctly the
+    // whole time.
+    const { data } = await post("/api/giveup");
+    bubble("tutor", (data && data.reply) || "That's okay. Some mysteries take more than one day.");
   });
 
   window.addEventListener("pagehide", () => {
