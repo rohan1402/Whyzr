@@ -330,8 +330,15 @@ async function handle(req, res, url) {
     return json(res, 200, {
       ok: true,
       had,
-      reply: "That's okay. Wanting the answer is not giving up, it's being honest. " +
-        "Ask me a brand new why question whenever you like.",
+      // Deliberately does NOT contain the answer. RULES rule 1 holds "no
+      // matter what the child says or why they say it", and a button that
+      // hands over answers would make the whole product a formality. What a
+      // stuck child needs instead is a dignified way out and somewhere real
+      // to take the question.
+      reply: "That's okay, and stopping is not the same as failing. Some mysteries " +
+        "take more than one day. Try asking a grown-up about this one, and come " +
+        "back and tell me what you found out. Or ask me a brand new why question " +
+        "whenever you like.",
       sessionEnded: true,
     });
   }

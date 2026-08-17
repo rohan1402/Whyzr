@@ -116,16 +116,30 @@
      corners with no affordance, so they read as stray text rather than
      things you could press. Now they are chips: a surface, a border, a
      hover state, and sentence case. */
+  /* A fixed rail down the left, so every control stays reachable however far
+     the conversation scrolls. Fixed rather than sticky: sticky still moves
+     with its container, and "New adventure" is exactly the thing a child
+     wants when they are a long way down and stuck. */
   #topbar {
-    position: sticky; top: 0; z-index: 5;
-    /* Same column as the conversation, so the controls read as belonging to
-       it rather than being pinned to the far corners of a wide monitor. */
-    width: min(680px, 94vw); display: flex; justify-content: space-between; align-items: center;
-    gap: 10px; padding: 10px 4px;
-    background: linear-gradient(180deg, rgba(214,236,250,.96), rgba(214,236,250,0));
-    backdrop-filter: blur(6px);
+    position: fixed; left: 16px; top: 96px; z-index: 5;
+    display: flex; flex-direction: column; align-items: flex-start; gap: 8px;
   }
   #topbar.hidden { display: none !important; }
+  #topbar .chip, #topbar .parentlink { width: 100%; text-align: left; }
+
+  /* Under 1040px there is not enough room beside the 680px conversation for
+     a rail without it overlapping the bubbles, so the controls become a
+     horizontal bar that wraps. Same elements, same order, no duplication. */
+  @media (max-width: 1039px) {
+    #topbar {
+      position: sticky; left: auto; top: 0;
+      width: min(680px, 94vw); flex-direction: row; flex-wrap: wrap;
+      align-items: center; gap: 8px; padding: 10px 4px;
+      background: linear-gradient(180deg, rgba(214,236,250,.96), rgba(214,236,250,0));
+      backdrop-filter: blur(6px);
+    }
+    #topbar .chip, #topbar .parentlink { width: auto; }
+  }
   .chip {
     font: inherit; font-size: .84rem; line-height: 1;
     padding: 9px 14px; border-radius: 999px; cursor: pointer;
@@ -150,11 +164,11 @@
   /* For grown-ups, not the child, so it lives in the header rather than
      competing with the mic caption at the bottom of the screen. */
   a.parentlink {
-    display: inline-block; margin-top: 10px;
-    font-size: .82rem; color: var(--ink); text-decoration: none;
-    padding: 7px 13px; border-radius: 999px;
+    display: inline-block; font-size: .82rem; color: var(--ink); text-decoration: none;
+    padding: 9px 14px; border-radius: 999px; line-height: 1;
     background: rgba(255,255,255,.72); border: 1px solid rgba(58,51,80,.12);
     transition: background .15s, box-shadow .15s;
+    white-space: nowrap;
   }
   a.parentlink:hover { background: #fff; box-shadow: 0 2px 7px rgba(58,51,80,.14); }
   a.parentlink:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
@@ -164,14 +178,14 @@
   <header>
     <h1><span class="why">Why</span>zr</h1>
     <p>the friend who asks why back</p>
-    <a class="parentlink hidden" id="parentLink" href="/parent">Grown-ups: see the journal &rarr;</a>
   </header>
 
   <!-- Session controls, in a bar of their own. Sticky so "New adventure"
        stays reachable in a long conversation. -->
   <div id="topbar" class="hidden">
-    <button id="giveup" class="chip" title="It is okay to ask">Just tell me the answer</button>
+    <button id="giveup" class="chip" title="Stop this mystery for today">I want to stop</button>
     <button id="newchat" class="chip" title="Start a fresh adventure">New adventure</button>
+    <a class="parentlink" id="parentLink" href="/parent">Grown-ups &rarr;</a>
   </div>
 
   <!-- 1. access code -->
@@ -229,7 +243,7 @@
   let busy = false, sessionOver = false, epoch = 0;
 
   const show = (...ids) => {
-    ["gate", "setup", "chat", "dock", "miclabel", "topbar", "parentLink"]
+    ["gate", "setup", "chat", "dock", "miclabel", "topbar"]
       .forEach((id) => $(id).classList.add("hidden"));
     ids.forEach((id) => $(id).classList.remove("hidden"));
   };
@@ -390,7 +404,7 @@
     const out = await post("/api/giveup");
     // Warm, never scolding. The child is told this was an honest thing to
     // do, because the score is not their business and the habit of asking is.
-    bubble("tutor", (out && out.reply) || "That's okay. Ask me a new why question whenever you like.");
+    bubble("tutor", (out && out.reply) || "That's okay. Some mysteries take more than one day.");
   });
 
   window.addEventListener("pagehide", () => {
@@ -404,7 +418,7 @@
   }
 
   function startChat(nickname, note) {
-    show("chat", "dock", "miclabel", "topbar", "parentLink");
+    show("chat", "dock", "miclabel", "topbar");
     if (note) bubble("tutor", note);
     hello(nickname);
   }
