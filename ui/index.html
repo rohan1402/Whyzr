@@ -18,7 +18,10 @@
   * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
   html, body { overflow-x: hidden; }
   body {
-    font-family: "Comic Sans MS", "Chalkboard SE", "Segoe UI", system-ui, sans-serif;
+    /* Segoe UI first; the rest are the nearest native faces so a Mac or
+       Linux box lands on its own system sans rather than a serif default. */
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue",
+                 system-ui, Roboto, Arial, sans-serif;
     background: linear-gradient(180deg, var(--sky) 0%, var(--cream) 30%);
     background-attachment: fixed;
     color: var(--ink);
@@ -29,7 +32,7 @@
     align-items: center;
   }
   header { text-align: center; padding: 20px 10px 4px; }
-  header h1 { font-size: clamp(1.8rem, 8vw, 2.2rem); letter-spacing: 1px; }
+  header h1 { font-size: clamp(1.8rem, 8vw, 2.2rem); letter-spacing: -.5px; font-weight: 650; }
   header h1 .why { color: var(--accent); }
   header p { opacity: .75; font-size: .95rem; margin-top: 2px; }
 
@@ -77,6 +80,13 @@
   .tutor { background: var(--tutor); border-bottom-left-radius: 6px; align-self: flex-start; }
   .kid   { background: var(--kid);   border-bottom-right-radius: 6px; align-self: flex-end; }
   .thinking { align-self: flex-start; opacity: .6; font-size: 1.4rem; letter-spacing: 4px; }
+  .bubble strong { font-weight: 650; }
+  .bubble em { font-style: italic; }
+  .bubble code {
+    font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+    font-size: .92em; background: rgba(58,51,80,.07);
+    padding: 1px 5px; border-radius: 5px;
+  }
 
   #dock {
     position: fixed; bottom: 0; left: 0; right: 0;
@@ -102,29 +112,65 @@
     font-family: inherit; background: #fff; color: var(--ink);
   }
   #typed:focus { outline: 3px solid var(--sun); border-color: transparent; }
-  #newchat {
-    position: fixed; top: 12px; right: 14px; background: none; border: none;
-    font-size: .85rem; color: var(--ink); opacity: .55; cursor: pointer; font-family: inherit;
-    padding: 8px;
+  /* Session controls. These were bare lowercase words floating in the
+     corners with no affordance, so they read as stray text rather than
+     things you could press. Now they are chips: a surface, a border, a
+     hover state, and sentence case. */
+  #topbar {
+    position: sticky; top: 0; z-index: 5;
+    width: 100%; display: flex; justify-content: space-between; align-items: center;
+    gap: 10px; padding: 10px clamp(10px, 3vw, 18px);
+    background: linear-gradient(180deg, rgba(214,236,250,.96), rgba(214,236,250,0));
+    backdrop-filter: blur(6px);
   }
-  #giveup {
-    position: fixed; top: 12px; left: 14px; background: none; border: none;
-    font-size: .85rem; color: var(--ink); opacity: .45; cursor: pointer; font-family: inherit;
-    padding: 8px;
+  #topbar.hidden { display: none !important; }
+  .chip {
+    font: inherit; font-size: .84rem; line-height: 1;
+    padding: 9px 14px; border-radius: 999px; cursor: pointer;
+    background: rgba(255,255,255,.9); color: var(--ink);
+    border: 1px solid rgba(58,51,80,.14);
+    box-shadow: 0 1px 3px rgba(58,51,80,.10);
+    transition: background .15s, box-shadow .15s, transform .1s;
+    white-space: nowrap;
   }
+  .chip:hover { background: #fff; box-shadow: 0 2px 7px rgba(58,51,80,.16); }
+  .chip:active { transform: scale(.97); }
+  .chip:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
+  /* The escape hatch is deliberately the quieter of the two: available
+     without inviting a child to reach for it first. */
+  #giveup { opacity: .72; }
+  #giveup:hover { opacity: 1; }
   #miclabel {
     position: fixed; left: 50%; transform: translateX(-50%);
     bottom: calc(2px + env(safe-area-inset-bottom)); font-size: .75rem; opacity: .5;
   }
   .hidden { display: none !important; }
-  a.parentlink { font-size: .8rem; opacity: .5; color: var(--ink); margin: 6px 0 18px; }
+  /* For grown-ups, not the child, so it lives in the header rather than
+     competing with the mic caption at the bottom of the screen. */
+  a.parentlink {
+    display: inline-block; margin-top: 10px;
+    font-size: .82rem; color: var(--ink); text-decoration: none;
+    padding: 7px 13px; border-radius: 999px;
+    background: rgba(255,255,255,.72); border: 1px solid rgba(58,51,80,.12);
+    transition: background .15s, box-shadow .15s;
+  }
+  a.parentlink:hover { background: #fff; box-shadow: 0 2px 7px rgba(58,51,80,.14); }
+  a.parentlink:focus-visible { outline: 3px solid var(--sun); outline-offset: 2px; }
 </style>
 </head>
 <body>
   <header>
     <h1><span class="why">Why</span>zr</h1>
     <p>the friend who asks why back</p>
+    <a class="parentlink hidden" id="parentLink" href="/parent">Grown-ups: see the journal &rarr;</a>
   </header>
+
+  <!-- Session controls, in a bar of their own. Sticky so "New adventure"
+       stays reachable in a long conversation. -->
+  <div id="topbar" class="hidden">
+    <button id="giveup" class="chip" title="It is okay to ask">Just tell me the answer</button>
+    <button id="newchat" class="chip" title="Start a fresh adventure">New adventure</button>
+  </div>
 
   <!-- 1. access code -->
   <section id="gate" class="card hidden">
@@ -163,7 +209,6 @@
   </section>
 
   <!-- 3. chat -->
-  <button id="newchat" class="hidden" title="Start a fresh adventure">new adventure</button>
   <main id="chat" class="hidden"></main>
   <div id="dock" class="hidden">
     <input id="typed" placeholder="or type here..." autocomplete="off">
@@ -174,9 +219,7 @@
        classifier would add a model call and a new way to be wrong. A button
        is unambiguous, instantly loggable, and gives the child a visible way
        out, which matters more than the score. -->
-  <button id="giveup" class="hidden" title="It is okay to ask">just tell me the answer</button>
   <div id="miclabel" class="hidden">press the button and talk</div>
-  <a class="parentlink hidden" id="parentLink" href="/parent">grown-ups: see the journal</a>
 
 <script>
   const $ = (id) => document.getElementById(id);
@@ -184,7 +227,7 @@
   let busy = false, sessionOver = false, epoch = 0;
 
   const show = (...ids) => {
-    ["gate", "setup", "chat", "dock", "miclabel", "newchat", "giveup", "parentLink"]
+    ["gate", "setup", "chat", "dock", "miclabel", "topbar", "parentLink"]
       .forEach((id) => $(id).classList.add("hidden"));
     ids.forEach((id) => $(id).classList.remove("hidden"));
   };
@@ -198,10 +241,37 @@
     return { status: r.status, data: await r.json().catch(() => ({})) };
   }
 
+  /**
+   * The model writes markdown, so "what's *different*" was rendering with
+   * literal asterisks. Render the emphasis instead of showing its syntax.
+   *
+   * Order matters and is the whole safety story: escape every HTML-special
+   * character FIRST, then introduce only the tags we generate ourselves. Doing
+   * it the other way round would let a model reply, or a question a child
+   * pasted in, inject markup into the page.
+   */
+  function formatted(text) {
+    const esc = String(text).replace(/[&<>"']/g, (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    return esc
+      // **bold** and __bold__ before the single-mark forms, or the openers
+      // of a bold run get eaten as italics.
+      .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+      // *italic*. The no-whitespace-inside rule is markdown's own, and it
+      // matters here more than most places: without it "2 * 3 and 4 * 5"
+      // italicises the middle, and arithmetic is exactly what this tutor
+      // spends its day on.
+      .replace(/(^|[^*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![*\w])/g, "$1<em>$2</em>")
+      .replace(/(^|[^_\w])_(?!\s)([^_\n]+?)(?<!\s)_(?![_\w])/g, "$1<em>$2</em>")
+      // `code`, which the tutor occasionally reaches for
+      .replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  }
+
   function bubble(cls, text) {
     const b = document.createElement("div");
     b.className = "bubble " + cls;
-    b.textContent = text;
+    b.innerHTML = formatted(text);
     chat.appendChild(b);
     b.scrollIntoView({ behavior: "smooth", block: "end" });
     return b;
@@ -332,7 +402,7 @@
   }
 
   function startChat(nickname, note) {
-    show("chat", "dock", "miclabel", "newchat", "giveup", "parentLink");
+    show("chat", "dock", "miclabel", "topbar", "parentLink");
     if (note) bubble("tutor", note);
     hello(nickname);
   }

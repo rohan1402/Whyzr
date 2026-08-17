@@ -12,7 +12,9 @@
   * { box-sizing: border-box; margin: 0; }
   html, body { overflow-x: hidden; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    /* Segoe UI first, matching the kid app, then the nearest native faces. */
+    font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue",
+                 system-ui, Roboto, Arial, sans-serif;
     background: var(--paper); color: var(--ink);
     min-height: 100dvh; line-height: 1.5;
   }
