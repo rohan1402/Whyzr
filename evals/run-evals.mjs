@@ -213,10 +213,15 @@ async function layer1() {
     // A missing or empty access code must refuse to START THE SERVER, never
     // serve ungated. Exercises the same assertion app.mjs runs at boot.
     const startCheck = `import("./server/config.mjs").then((m) => m.assertServerConfig())`;
+    // WHYZR_OPEN_DEV=0 explicitly. This asserts a PRODUCTION property, and a
+    // developer with WHYZR_OPEN_DEV=1 in their local .env would otherwise see
+    // it pass vacuously: config.mjs only reads a value out of .env when the
+    // variable is unset, so setting it here keeps the local convenience flag
+    // from deciding whether the fail-closed test is meaningful.
     for (const [env, name] of [["", "missing"], ['WHYZR_CODE=""', "empty"], ['WHYZR_CODE=abc', "too short"]]) {
       let refused = false;
       try {
-        execSync(`${env} node --input-type=module -e '${startCheck}'`,
+        execSync(`WHYZR_OPEN_DEV=0 ${env} node --input-type=module -e '${startCheck}'`,
           { cwd: ROOT, encoding: "utf8", stdio: "pipe" });
       } catch { refused = true; }
       check(`hosted: ${name} access code refuses to start (no fail-open)`, refused);
