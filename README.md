@@ -210,7 +210,7 @@ gitagent treats a crashed hook as allow (see FEEDBACK.md item 4), so the
 guard is written to never crash and to block when its input is
 unparseable.
 
-## Proof, not vibes: the eval suite
+## Proof: the eval suite
 
 Two layers, one command each.
 
