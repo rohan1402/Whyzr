@@ -38,8 +38,11 @@ Node 24, because npm 10 rejects the lockfile. The parent view is at
 **The one command worth your time:**
 
 ```bash
-git diff child-a child-b -- skills/
+git -C .whyzr-data/agent-repo diff child-<id-a> child-<id-b> -- skills/
 ```
+
+(the ids are printed by `git -C .whyzr-data/agent-repo branch`, one per
+child you set up)
 
 Two children, one tutor, and the diff is what each of them taught it.
 Whyzr keeps five interchangeable reasoning moves (predict first, bridge an
