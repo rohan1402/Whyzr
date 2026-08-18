@@ -5,7 +5,7 @@ sending: if a sentence sounds like marketing, cut it.
 
 **To:** product@lyzr.ai
 **Cc:** Siva Surendira, Shreyas Kapale
-**Subject:** Whyzr, built on gitagent, plus 21 findings from using it hard
+**Subject:** Whyzr, built on gitagent, plus 22 findings from using it hard
 
 ---
 
@@ -19,7 +19,21 @@ journal of how they reason, and lets a parent edit the rules the AI must
 follow.
 
 Repo: https://github.com/rohan1402/Whyzr
-Demo: <link>
+
+There is no demo video on purpose. It runs locally in about a minute, and
+seeing the git history move under your own hands makes the point better
+than watching me do it:
+
+```bash
+git clone https://github.com/rohan1402/Whyzr.git && cd Whyzr
+npm ci
+cp .env.example .env      # ANTHROPIC_API_KEY for the tutor,
+                          # GOOGLE_API_KEY for the judge (both needed)
+npm run dev               # http://localhost:3456
+```
+
+Node 24, because npm 10 rejects the lockfile. The parent view is at
+/parent behind the PIN you choose at signup.
 
 **The one command worth your time:**
 
@@ -34,7 +48,7 @@ actually get a specific child to an answer. Each child is a git branch,
 checked out as a worktree, so the evidence for one child cannot contaminate
 another and there is no isolation code doing it. Git already does that.
 
-Three things I would point at:
+Four things I would point at:
 
 **1. The scoring is not the model marking its own homework.** gitagent's
 reinforcement takes the outcome from the model itself. So Whyzr adds a
@@ -51,7 +65,13 @@ parent for a compliance officer and the tutor for a claims agent and that is
 the governance story your customers ask for, except nobody built it. It is
 git.
 
-**3. I have been honest about what does not work.** The README carries the
+**3. A real child used it.** My own, not a scripted transcript. That is the
+one thing the repo cannot show you, and it is where several of the sharper
+rules came from: a tutor that lectures instead of asking, a give-up button
+that promised an answer and then refused to give one, a session that hung
+up on a child mid-thought.
+
+**4. I have been honest about what does not work.** The README carries the
 limits with numbers attached: selection finds *a* move that works for a
 child reliably, but does not reliably rank that child's two best moves
 against each other, and there is a simulation in there saying why. An early
@@ -59,7 +79,7 @@ result did not replicate when I re-ran it, so both runs are published. The
 seeded numbers are labelled as seeded in the README, because they
 demonstrate the machinery and are not evidence that children learn.
 
-**FEEDBACK.md is the part I would actually read first.** 21 findings from
+**FEEDBACK.md is the part I would actually read first.** 22 findings from
 building on gitagent 2.0.2, each with what happens, why it matters, our
 workaround, and a suggested fix. The ones I would prioritise:
 
@@ -83,6 +103,14 @@ workaround, and a suggested fix. The ones I would prioritise:
 - **Item 20.** `adjustConfidence` and friends are not exported from the
   package entry, so an application supplying the external signal the
   framework asks for has to reach into `dist/`.
+- **Item 22, the one that cost me the most time.** Skills are marked FIRST
+  PRIORITY (MANDATORY) and the model is told it MUST read a matching
+  skill's body. Measured across six tutoring sessions with a skill
+  described "check this before tutoring on any topic", it read it in three.
+  Another run: none of six. So a skill body is present about half the time
+  and which half is invisible, which is a hard thing to build on. I moved
+  safety-critical wording back into the always-present files and added an
+  eval that records which skills were actually read.
 
 I built on the framework rather than around it: SOUL.md, RULES.md, the
 memory tool, hooks, declarative tools, skills with confidence, branches and
@@ -98,9 +126,10 @@ Rohan
 
 ## Before sending, check
 
-- [ ] Demo recorded and linked
-- [ ] Repo is public and the README renders
-- [ ] `SAVE_TRANSCRIPTS` is off, and any test transcripts deleted
-- [ ] No child branch on GitHub (`git ls-remote --heads origin`)
-- [ ] The sibling test happened, and anything it taught is in the README
-- [ ] Read the email out loud once
+- [x] No demo video. The README runs it in a minute, verified from a fresh
+      clone of the public repo: npm ci, npm run dev, 89/89 machinery evals.
+- [x] Repo is public, `main` only, zero child branches on GitHub.
+- [x] `SAVE_TRANSCRIPTS` off by default, no transcripts stored.
+- [x] No keys or access codes in any tracked file.
+- [ ] Read the email out loud once. If a sentence sounds like marketing,
+      cut it.
