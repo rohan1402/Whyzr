@@ -6,6 +6,7 @@
   "description": "A Socratic thinking buddy for kids, built on gitagent. It never gives answers; it helps children reach them.",
   "scripts": {
     "start": "node server/app.mjs",
+    "dev": "WHYZR_OPEN_DEV=1 node server/app.mjs",
     "review": "node server/review.mjs",
     "kid": "node ui/server.mjs",
     "mock": "node evals/mock-llm.mjs",

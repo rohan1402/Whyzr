@@ -83,16 +83,16 @@ cp .env.example .env    # then paste ANTHROPIC_API_KEY and GOOGLE_API_KEY
 Fastest way to see the whole thing, no access code needed:
 
 ```bash
-WHYZR_OPEN_DEV=1 MAX_KIDS=2 npm start
+npm run dev
 # kid app      http://localhost:3456
 # parent view  http://localhost:3456/parent   (the PIN you set at signup)
 ```
 
-`WHYZR_OPEN_DEV=1` opens the gate for local use. Without it the app
-refuses to start unless `WHYZR_CODE` is set, which is deliberate: an unset
-access code used to mean "serve with no gate", and that is the wrong
-default for a children's app. `MAX_KIDS=2` lets you set up two children and
-run the `git diff` below.
+`npm run dev` opens the gate for local use. `npm start` is the hosted form
+and deliberately refuses to boot unless `WHYZR_CODE` is set: an unset access
+code used to mean "serve with no gate", which is the wrong default for a
+children's app, so the two are separate commands rather than one flag you
+can forget.
 
 The boot banner tells you what is on. If it says
 `judge : DISABLED`, grading is off and the learning half of the product
@@ -138,7 +138,8 @@ parent or child does in the hosted app can ever reach this repository. The
 parent dashboard displays that fact, and an eval asserts it.
 
 ```bash
-npm start          # hosted app; needs WHYZR_CODE (see .env.example)
+npm run dev        # local prototype, no access code
+npm start          # hosted form; needs WHYZR_CODE (see .env.example)
 npm run review     # read sessions, journals and parent edits from a terminal
 ```
 
