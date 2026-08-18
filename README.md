@@ -57,7 +57,19 @@ wrapper with a logo.
 
 ## Quick start
 
-Requirements: Node 22 or newer, git, an Anthropic API key.
+**Requirements**
+
+- **Node 24** and npm 11. Node 22 ships npm 10, which rejects this
+  lockfile with "Missing: ... from lock file". The Dockerfile pins 24 for
+  the same reason.
+- git.
+- Two API keys, and the second one matters more than it looks:
+  - `ANTHROPIC_API_KEY` for the tutor.
+  - `GOOGLE_API_KEY` for the **judge**, a second model in a different
+    family that grades the child's answer. Without it Whyzr still tutors
+    and still writes journals, but nothing is graded: no verdicts, no
+    confidence movement, no learning. The loop is the point of this
+    project, so set it before deciding the project does not work.
 
 ```bash
 npm install -g @open-gitagent/gitagent
@@ -65,8 +77,26 @@ git clone https://github.com/rohan1402/Whyzr.git
 cd Whyzr
 npm ci                  # ci, not install: keeps package-lock.json pristine,
                         # which the eval runner requires (clean git tree)
-cp .env.example .env    # then paste your ANTHROPIC_API_KEY into .env
+cp .env.example .env    # then paste ANTHROPIC_API_KEY and GOOGLE_API_KEY
 ```
+
+Fastest way to see the whole thing, no access code needed:
+
+```bash
+WHYZR_OPEN_DEV=1 MAX_KIDS=2 npm start
+# kid app      http://localhost:3456
+# parent view  http://localhost:3456/parent   (the PIN you set at signup)
+```
+
+`WHYZR_OPEN_DEV=1` opens the gate for local use. Without it the app
+refuses to start unless `WHYZR_CODE` is set, which is deliberate: an unset
+access code used to mean "serve with no gate", and that is the wrong
+default for a children's app. `MAX_KIDS=2` lets you set up two children and
+run the `git diff` below.
+
+The boot banner tells you what is on. If it says
+`judge : DISABLED`, grading is off and the learning half of the product
+will not run.
 
 Talk to the tutor in the terminal (gitagent has no --help; these are the
 flags that matter):

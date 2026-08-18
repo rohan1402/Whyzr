@@ -576,6 +576,11 @@ server.listen(config.port, () => {
   console.log(`  agent repo    : ${paths.agentRepo()} (no remotes)`);
   console.log(`  access code   : ${LOCAL_DEV ? "NOT SET (local dev, gate open)" : "set"}`);
   console.log(`  admin         : ${config.adminKey ? "enabled" : "disabled (ADMIN_KEY unset)"}`);
+  // Silence here was costing a reviewer the whole learning loop: the tutor
+  // works fine without a judge, so nothing looks broken while nothing is
+  // ever graded.
+  console.log(`  judge         : ${process.env.GOOGLE_API_KEY
+    ? "enabled" : "DISABLED (GOOGLE_API_KEY unset: no grading, no learning)"}`);
   console.log(`  transcripts   : ${config.saveTranscripts ? "SAVING (testing mode)" : "not saved"}`);
   console.log(`  daily budget  : $${config.dailyBudgetUsd}`);
 });
